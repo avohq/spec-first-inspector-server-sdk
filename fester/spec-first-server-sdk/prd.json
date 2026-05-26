@@ -224,7 +224,7 @@
           "description": "Validate error-handling fixtures JSON"
         }
       ],
-      "status": "pending",
+      "status": "completed",
       "testPattern": null
     },
     {
@@ -263,7 +263,7 @@
           "description": "Verify all 9 critical section keywords are present \u2014 markdownlint only validates syntax, not content completeness; a missing section breaks harness implementors"
         }
       ],
-      "status": "pending",
+      "status": "completed",
       "testPattern": null
     },
     {
@@ -298,7 +298,7 @@
           "description": "Verify Section 3 SDK generation checklist has at least 12 binary pass/fail items"
         }
       ],
-      "status": "pending",
+      "status": "in_progress",
       "testPattern": null
     },
     {

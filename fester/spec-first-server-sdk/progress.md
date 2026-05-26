@@ -20,3 +20,5 @@ All stories use general-purpose subagent. Project is greenfield docs/specs gener
 - story-3: openapi+schemas — PASS (98/100) — attempt 1
 - story-4: schema-extraction fixtures — PASS (100/100) — attempt 1
 - story-5: wire-protocol fixtures — PASS (95/100) — attempt 1
+- story-6: dedup+error fixtures — PASS (100/100) — attempt 1
+- story-7: runner-contract.md — PASS (100/100) — attempt 2 (1st died on socket error)
