@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/avohq/spec-first-inspector-server-sdk/main/schemas/schema-entry.json",
+  "title": "SchemaEntry",
+  "description": "A single extracted schema entry representing one event property.",
+  "type": "object",
+  "required": ["propertyName", "propertyType"],
+  "properties": {
+    "propertyName": {
+      "type": "string",
+      "description": "The name of the event property."
+    },
+    "propertyType": {
+      "type": "string",
+      "enum": [
+        "string",
+        "int",
+        "float",
+        "boolean",
+        "null",
+        "object",
+        "list(string)",
+        "list(int)",
+        "list(float)",
+        "list(boolean)",
+        "list(object)",
+        "list(null)",
+        "unknown"
+      ],
+      "description": "The classified type of the property value."
+    },
+    "children": {
+      "description": "Present when propertyType is 'object' or any list type. Each element is either a type string or a SchemaEntry array.",
+      "type": "array",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "enum": [
+              "string",
+              "int",
+              "float",
+              "boolean",
+              "null",
+              "object",
+              "unknown"
+            ]
+          },
+          {
+            "type": "array",
+            "items": {
+              "$ref": "#"
+            }
+          }
+        ]
+      }
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/avohq/spec-first-inspector-server-sdk/main/schemas/event-batch.json",
+  "title": "EventBatch",
+  "description": "The top-level request body for POST /inspector/v1/track. An array of exactly one event object. No time-based batching in v1.",
+  "type": "array",
+  "minItems": 1,
+  "maxItems": 1,
+  "items": {
+    "$ref": "event-body.json"
+  }
+}

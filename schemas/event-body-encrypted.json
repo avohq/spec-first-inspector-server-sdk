@@ -1,0 +1,109 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/avohq/spec-first-inspector-server-sdk/main/schemas/event-body-encrypted.json",
+  "title": "EventBodyEncrypted",
+  "description": "A single event object in the Inspector v1 track request body with encrypted event properties. Used when env != prod and publicEncryptionKey is provided.",
+  "type": "object",
+  "required": [
+    "apiKey",
+    "appName",
+    "appVersion",
+    "libVersion",
+    "env",
+    "libPlatform",
+    "messageId",
+    "anonymousId",
+    "createdAt",
+    "samplingRate",
+    "type",
+    "eventName",
+    "eventProperties",
+    "avoFunction",
+    "eventId",
+    "eventHash"
+  ],
+  "properties": {
+    "apiKey": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The Inspector API key passed to the constructor."
+    },
+    "appName": {
+      "type": "string",
+      "description": "Application name. Empty string if not provided."
+    },
+    "appVersion": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Application version (version constructor option)."
+    },
+    "libVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "SDK library version. Plain SemVer string, no suffix."
+    },
+    "env": {
+      "type": "string",
+      "enum": ["dev", "staging"],
+      "description": "Environment. Encryption is only active in dev and staging."
+    },
+    "libPlatform": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SDK platform/language identifier."
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "UUID v4, unique per event."
+    },
+    "anonymousId": {
+      "type": "string",
+      "description": "Caller-supplied streamId, or empty string if none provided."
+    },
+    "createdAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "description": "ISO 8601 UTC timestamp with millisecond precision."
+    },
+    "samplingRate": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Current sampling rate [0.0, 1.0]. Initial value 1.0."
+    },
+    "publicEncryptionKey": {
+      "type": "string",
+      "description": "P-256 public key in hex. Present when encryption is active."
+    },
+    "type": {
+      "type": "string",
+      "const": "event",
+      "description": "Literal string 'event'."
+    },
+    "eventName": {
+      "type": "string",
+      "description": "Name of the tracked event."
+    },
+    "eventProperties": {
+      "type": "array",
+      "items": {
+        "$ref": "event-property-encrypted.json"
+      },
+      "description": "Extracted schema — array of encrypted property objects. List-type properties are omitted."
+    },
+    "avoFunction": {
+      "type": "boolean",
+      "description": "true if sent via _avoFunctionTrackSchemaFromEvent; false for trackSchemaFromEvent."
+    },
+    "eventId": {
+      "type": ["string", "null"],
+      "description": "Avo Codegen event ID. Must be null when avoFunction is false."
+    },
+    "eventHash": {
+      "type": ["string", "null"],
+      "description": "Avo Codegen event hash. Must be null when avoFunction is false."
+    }
+  },
+  "additionalProperties": false
+}
