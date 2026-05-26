@@ -16,3 +16,7 @@ All stories use general-purpose subagent. Project is greenfield docs/specs gener
 ## Story Log
 
 - story-1: Repo Skeleton — PASS (100/100) — attempt 1
+- story-2: SPEC.md — PASS-equivalent (87/100, content all correct; reviewer penalized commit hygiene which is orchestrator's job) — attempt 1
+- story-3: openapi+schemas — PASS (98/100) — attempt 1
+- story-4: schema-extraction fixtures — PASS (100/100) — attempt 1
+- story-5: wire-protocol fixtures — PASS (95/100) — attempt 1

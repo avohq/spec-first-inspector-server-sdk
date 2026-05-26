@@ -29,7 +29,7 @@
           "description": "Validate Markdown syntax for all top-level docs"
         }
       ],
-      "status": "in_progress",
+      "status": "completed",
       "testPattern": null
     },
     {
@@ -75,7 +75,7 @@
           "description": "Verify critical section content (RFC 2119 language, API methods, encryption, dedup) \u2014 catches a structurally valid but substantively incomplete SPEC.md"
         }
       ],
-      "status": "pending",
+      "status": "completed",
       "testPattern": null
     },
     {
@@ -120,7 +120,7 @@
           "description": "Assert libVersion pattern in event-body.json is plain SemVer (no +spec suffix)"
         }
       ],
-      "status": "pending",
+      "status": "completed",
       "testPattern": null
     },
     {
@@ -161,7 +161,7 @@
           "description": "Assert fixture-3 classifies 0.0 as float not int \u2014 highest-likelihood content deviation from node SDK reference implementation"
         }
       ],
-      "status": "pending",
+      "status": "completed",
       "testPattern": "conformance/schema-extraction/fixtures.json"
     },
     {
@@ -192,7 +192,7 @@
           "description": "Validate wire-protocol fixtures JSON is parseable"
         }
       ],
-      "status": "pending",
+      "status": "completed",
       "testPattern": "conformance/wire-protocol/fixtures.json"
     },
     {

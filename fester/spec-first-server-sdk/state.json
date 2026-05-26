@@ -1,9 +1,12 @@
 {
-  "globalIterations": 2,
+  "globalIterations": 5,
   "maxIterations": 27,
   "storyAttempts": {
     "story-1": 1,
-    "story-2": 1
+    "story-2": 1,
+    "story-3": 1,
+    "story-4": 1,
+    "story-5": 1
   },
   "lastUpdated": "2026-05-26T00:00:00Z"
 }
