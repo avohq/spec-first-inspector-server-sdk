@@ -1,0 +1,55 @@
+[
+  {
+    "fixture_id": "dedup-1",
+    "description": "Single trackSchemaFromEvent call — baseline: one HTTP call is made (no dedup suppression in a single invocation)",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "Button Clicked",
+      "eventProperties": { "label": "submit" },
+      "streamId": "stream-abc"
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_count": 1,
+    "expected_promise_outcome": "resolve",
+    "notes": "Baseline single-invocation dedup fixture. A single call always sends one HTTP request — deduplication only fires when two calls with the same key+properties occur within 500 ms in the same process. The single-invocation harness cannot model the suppression case; this fixture verifies the non-suppressed path only."
+  },
+  {
+    "fixture_id": "dedup-2",
+    "description": "Single _avoFunctionTrackSchemaFromEvent call — avoFunction=true path sends one HTTP call (no cross-bucket suppression in a single invocation)",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "_avoFunctionTrackSchemaFromEvent",
+    "input": {
+      "eventName": "Button Clicked",
+      "eventProperties": { "label": "submit" },
+      "eventId": "evt-123",
+      "eventHash": "abc456",
+      "streamId": "stream-abc"
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": "1.0.0",
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "anonymousId": "stream-abc",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "Button Clicked",
+        "eventProperties": [
+          { "propertyName": "label", "propertyType": "string" }
+        ],
+        "avoFunction": true,
+        "eventId": "evt-123",
+        "eventHash": "abc456"
+      }
+    ],
+    "expected_promise_outcome": "resolve",
+    "notes": "Verifies the avoFunctions bucket path: avoFunction=true, eventId and eventHash are set in the wire body. Cross-bucket suppression (avoFunctions → manual) cannot be tested in a single invocation — see README for manual testing guidance."
+  }
+]
