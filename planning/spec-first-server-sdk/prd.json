@@ -1,0 +1,316 @@
+{
+  "featureName": "spec-first-server-sdk",
+  "branchName": "fester/spec-first-server-sdk",
+  "baseBranch": "main",
+  "createdAt": "2026-05-25",
+  "specPath": "planning/spec-first-server-sdk/spec.md",
+  "reviewPath": "planning/spec-first-server-sdk/spec-review.md",
+  "maxIterations": 27,
+  "stories": [
+    {
+      "id": "story-1",
+      "title": "Repo Skeleton: README.md, AGENTS.md stub, and top-level structure",
+      "description": "Create the top-level repo layout: README.md (human-oriented overview, quick start, links), CHANGELOG.md (v1.0.0 [WIRE] entry), VERSIONING.md (semver policy), and AGENTS.md stub with all 5 required section headings. The repo already has LICENSE.",
+      "approach": "general-purpose",
+      "priority": "critical",
+      "dependsOn": [],
+      "estimatedFiles": 4,
+      "acceptanceCriteria": [
+        "README.md exists and contains: repo purpose, 3-step quick start, links to SPEC.md, AGENTS.md, and conformance/",
+        "CHANGELOG.md exists with a v1.0.0 [WIRE] entry",
+        "VERSIONING.md exists with MAJOR/MINOR/PATCH definitions and a note that downstream SDKs MUST declare the spec version they implement",
+        "AGENTS.md exists with all 5 required section headings (stub content acceptable at this stage)",
+        "All Markdown files are valid (no broken link anchors, no unclosed fences)"
+      ],
+      "qualityChecks": [
+        {
+          "command": "npx markdownlint-cli2 README.md CHANGELOG.md VERSIONING.md AGENTS.md",
+          "required": true,
+          "description": "Validate Markdown syntax for all top-level docs"
+        }
+      ],
+      "status": "pending",
+      "testPattern": null
+    },
+    {
+      "id": "story-2",
+      "title": "SPEC.md: Full Normative Prose Specification",
+      "description": "Write the full normative SPEC.md covering all 15 required sections: problem statement, source-of-truth strategy, server-side requirements, public API surface (all 7 methods), constructor options table with exact error strings, env enum with wire values and behavioral table, HTTP wire protocol (endpoint, headers, request body, response, timeout, error taxonomy with 4 categories, sampling), ID generation, schema extraction algorithm (pseudocode + key invariants), 13 golden fixtures inline, deduplication (OPTIONAL, 500ms window, key formula, manual cross-bucket note), encryption (ECIES P-256, byte layout, KDF), keepalive/flush, open questions, out of scope.",
+      "approach": "general-purpose",
+      "priority": "critical",
+      "dependsOn": ["story-1"],
+      "estimatedFiles": 1,
+      "acceptanceCriteria": [
+        "SPEC.md exists and contains all 15 required sections",
+        "All normative requirements use RFC 2119 MUST/SHOULD/MAY language",
+        "Constructor validation table is present with exact error message strings for apiKey and version",
+        "Error taxonomy table has all 4 categories with correct promise outcomes: network timeout/error resolve with eventSchema, SDK internal error rejects with fixed string, non-200 resolves with []",
+        "Schema extraction algorithm pseudocode matches the 13 golden fixtures",
+        "libVersion wire format is specified as plain SemVer string (no +spec suffix)",
+        "Dedup section notes that cross-bucket multi-step conformance requires manual testing",
+        "flush() section is prefixed with a note that it is a new requirement not present in the node reference SDK",
+        "0.0 classification is documented as float in statically-typed languages with JS-specific Number.isInteger guidance"
+      ],
+      "qualityChecks": [
+        {
+          "command": "npx markdownlint-cli2 SPEC.md",
+          "required": true,
+          "description": "Validate Markdown syntax"
+        },
+        {
+          "command": "wc -w SPEC.md | awk '{if($1 < 3000) {print \"FAIL: SPEC.md too short (\" $1 \" words)\"; exit 1} else print \"OK: \" $1 \" words\"}'",
+          "required": true,
+          "description": "Ensure SPEC.md is comprehensive (minimum 3000 words)"
+        },
+        {
+          "command": "grep -c \"^##\" SPEC.md | awk '{if($1 < 10) {print \"FAIL: too few sections in SPEC.md (found \" $1 \")\"; exit 1} else print \"OK: \" $1 \" sections\"}'",
+          "required": true,
+          "description": "Verify at least 10 top-level sections exist — a thin SPEC.md with too few sections fails all downstream stories"
+        },
+        {
+          "command": "grep -q \"MUST\\|SHOULD\\|MAY\" SPEC.md || (echo \"FAIL: No RFC 2119 language found\" && exit 1) && grep -q \"extractSchema\\|trackSchemaFromEvent\" SPEC.md || (echo \"FAIL: API methods not found\" && exit 1) && grep -q \"ECIES\\|encryption\" SPEC.md || (echo \"FAIL: Encryption section missing\" && exit 1) && grep -q \"500.*ms\\|dedup\" SPEC.md || (echo \"FAIL: Dedup section missing\" && exit 1) && echo \"OK: all critical sections present\"",
+          "required": true,
+          "description": "Verify critical section content (RFC 2119 language, API methods, encryption, dedup) — catches a structurally valid but substantively incomplete SPEC.md"
+        }
+      ],
+      "status": "pending",
+      "testPattern": null
+    },
+    {
+      "id": "story-3",
+      "title": "openapi.yaml and schemas/ Directory",
+      "description": "Write the OpenAPI 3.1 document for POST /inspector/v1/track and the 7 JSON Schema files under schemas/: event-batch.json, event-body.json, event-body-encrypted.json, base-body.json, event-property-plain.json, event-property-encrypted.json, schema-entry.json. These are the machine-readable contracts AI agents use for wire-compatible serialization code.",
+      "approach": "general-purpose",
+      "priority": "high",
+      "dependsOn": ["story-2"],
+      "estimatedFiles": 8,
+      "acceptanceCriteria": [
+        "openapi.yaml is valid OpenAPI 3.1",
+        "All 7 schema files exist under schemas/",
+        "env enum in event-body.json contains exactly [\"dev\", \"staging\", \"prod\"]",
+        "libVersion pattern in event-body.json matches plain SemVer (no +spec suffix) — regex: ^\\d+\\.\\d+\\.\\d+$",
+        "messageId pattern in event-body.json matches UUID v4 format",
+        "eventProperties in event-body.json references event-property-plain.json",
+        "eventProperties in event-body-encrypted.json references event-property-encrypted.json",
+        "All JSON Schema files are valid JSON Schema draft 2020-12 (not just valid JSON)"
+      ],
+      "qualityChecks": [
+        {
+          "command": "npx @redocly/cli lint openapi.yaml",
+          "required": true,
+          "description": "Validate OpenAPI 3.1 spec"
+        },
+        {
+          "command": "for f in schemas/*.json; do python3 -m json.tool $f > /dev/null && echo \"valid: $f\" || echo \"INVALID: $f\"; done",
+          "required": true,
+          "description": "Validate all JSON Schema files are valid JSON (syntax check)"
+        },
+        {
+          "command": "npx ajv-cli compile -s schemas/event-body.json schemas/event-batch.json schemas/event-body-encrypted.json schemas/base-body.json schemas/event-property-plain.json schemas/event-property-encrypted.json schemas/schema-entry.json",
+          "required": true,
+          "description": "Validate JSON Schema draft 2020-12 compliance — python3 -m json.tool only checks JSON syntax, not schema validity; invalid $ref paths or keyword usage would pass syntax check but fail here"
+        },
+        {
+          "command": "python3 -c \"import json; s=json.load(open('schemas/event-body.json')); pat=s.get('properties',{}).get('libVersion',{}).get('pattern',''); assert pat==r'^\\d+\\.\\d+\\.\\d+$', f'FAIL: libVersion pattern is {pat}'; print('OK: libVersion pattern matches plain SemVer')\"",
+          "required": true,
+          "description": "Assert libVersion pattern in event-body.json is plain SemVer (no +spec suffix)"
+        }
+      ],
+      "status": "pending",
+      "testPattern": null
+    },
+    {
+      "id": "story-4",
+      "title": "conformance/schema-extraction/fixtures.json (Fixtures 1–13)",
+      "description": "Write the 13 golden schema extraction conformance fixtures as machine-readable JSON. Each fixture has fixture_id, description, input, and expected fields. Includes conformance/README.md and conformance/schema-extraction/README.md. NOTE: conformance/batching/ is explicitly OUT OF V1 SCOPE — do NOT create it.",
+      "approach": "general-purpose",
+      "priority": "critical",
+      "dependsOn": ["story-2"],
+      "estimatedFiles": 3,
+      "acceptanceCriteria": [
+        "conformance/schema-extraction/fixtures.json contains exactly 13 fixtures with IDs fixture-1 through fixture-13",
+        "Each fixture has fixture_id, description, input, and expected fields",
+        "fixture-3: 0.0 expected type is \"float\", {} expected has propertyType object with children [], [] expected has propertyType list(string) with children []",
+        "fixture-7: children array is [\"float\", \"string\", [{\"propertyName\": \"three\", \"propertyType\": \"int\"}]]",
+        "fixture-8: input is null, expected is []",
+        "fixture-13: input is {\"a\": {\"b\": {\"c\": 42}}} with 3-level nested children",
+        "All fixture JSON is valid (parseable)",
+        "conformance/README.md and conformance/schema-extraction/README.md exist",
+        "conformance/batching/ directory MUST NOT be created (batching is out of v1 scope)"
+      ],
+      "qualityChecks": [
+        {
+          "command": "python3 -m json.tool conformance/schema-extraction/fixtures.json > /dev/null && echo valid",
+          "required": true,
+          "description": "Validate fixtures JSON is parseable"
+        },
+        {
+          "command": "python3 -c \"import json; f=json.load(open('conformance/schema-extraction/fixtures.json')); assert len(f)==13, f'Expected 13 fixtures, got {len(f)}'; print('OK: 13 fixtures found')\"",
+          "required": true,
+          "description": "Assert exactly 13 fixtures exist"
+        },
+        {
+          "command": "python3 -c \"import json; f=json.load(open('conformance/schema-extraction/fixtures.json')); f3=next(x for x in f if x['fixture_id']=='fixture-3'); d_prop=next(x for x in f3['expected'] if x['propertyName']=='d'); assert d_prop['propertyType']=='float', f'FAIL: 0.0 classified as {d_prop[\\\"propertyType\\\"]} not float'; print('OK: 0.0 correctly classified as float')\"",
+          "required": true,
+          "description": "Assert fixture-3 classifies 0.0 as float not int — highest-likelihood content deviation from node SDK reference implementation"
+        }
+      ],
+      "status": "pending",
+      "testPattern": "conformance/schema-extraction/fixtures.json"
+    },
+    {
+      "id": "story-5",
+      "title": "conformance/wire-protocol/fixtures.json (Fixtures wire-1 through wire-5)",
+      "description": "Write the 5 wire-protocol conformance fixtures: wire-1 (basic event send), wire-2 (sampling drop with no HTTP call), wire-3 (non-200 response resolves), wire-4 (streamId with colon — spec Edge Case 9), wire-5 (empty streamId treated as no stream ID — spec Edge Case 10). Includes conformance/wire-protocol/README.md documenting AVO_INSPECTOR_MOCK_ENDPOINT and format validation patterns.",
+      "approach": "general-purpose",
+      "priority": "high",
+      "dependsOn": ["story-2"],
+      "estimatedFiles": 2,
+      "acceptanceCriteria": [
+        "conformance/wire-protocol/fixtures.json contains fixtures wire-1, wire-2, wire-3, wire-4, wire-5",
+        "wire-1 expected_request_body contains \"<uuid-v4>\", \"<iso8601>\", \"<semver>\", \"<sdk-platform>\" placeholders",
+        "wire-1 expected_request_body includes avoFunction: false, eventId: null, eventHash: null",
+        "wire-2 has expected_request_count: 0 and mock_response: null",
+        "wire-3 notes field does NOT contain the ambiguous \"or the extracted schema\" clause",
+        "wire-4 expected_request_body includes anonymousId: \"stream:with:colons\" (verbatim colon passthrough, spec Edge Case 9)",
+        "wire-5 expected_request_body includes anonymousId: \"\" (empty string passthrough, spec Edge Case 10)",
+        "conformance/wire-protocol/README.md documents AVO_INSPECTOR_MOCK_ENDPOINT and format validation regex patterns",
+        "All JSON is valid"
+      ],
+      "qualityChecks": [
+        {
+          "command": "python3 -m json.tool conformance/wire-protocol/fixtures.json > /dev/null && echo valid",
+          "required": true,
+          "description": "Validate wire-protocol fixtures JSON is parseable"
+        }
+      ],
+      "status": "pending",
+      "testPattern": "conformance/wire-protocol/fixtures.json"
+    },
+    {
+      "id": "story-6",
+      "title": "conformance/deduplication and conformance/error-handling Fixtures",
+      "description": "Write deduplication fixtures (marked OPTIONAL) and error-handling fixtures. Dedup README must note single-invocation limitation for cross-bucket scenarios. Error-handling fixtures cover sampling boundary, non-200 response, and empty eventProperties.",
+      "approach": "general-purpose",
+      "priority": "medium",
+      "dependsOn": ["story-5"],
+      "estimatedFiles": 4,
+      "acceptanceCriteria": [
+        "conformance/deduplication/fixtures.json exists with at least 2 fixtures",
+        "conformance/deduplication/README.md explicitly states dedup conformance is OPTIONAL and notes single-invocation limitation for cross-bucket scenarios",
+        "conformance/error-handling/fixtures.json exists with at least 3 fixtures",
+        "error-2 fixture has expected_promise_outcome: \"resolve\" (non-200 must not reject)",
+        "All JSON files are valid"
+      ],
+      "qualityChecks": [
+        {
+          "command": "python3 -m json.tool conformance/deduplication/fixtures.json > /dev/null && echo valid",
+          "required": true,
+          "description": "Validate dedup fixtures JSON"
+        },
+        {
+          "command": "python3 -m json.tool conformance/error-handling/fixtures.json > /dev/null && echo valid",
+          "required": true,
+          "description": "Validate error-handling fixtures JSON"
+        }
+      ],
+      "status": "pending",
+      "testPattern": null
+    },
+    {
+      "id": "story-7",
+      "title": "conformance/runner-contract.md (Normative Harness Protocol)",
+      "description": "Write conformance/runner-contract.md — the complete normative harness protocol. No TBD sections allowed. Covers: entry point, invocation protocol, input/output envelope schemas, exit codes, AVO_INSPECTOR_MOCK_ENDPOINT env var, format validation patterns with regex, mock server protocol, and implementation checklist.",
+      "approach": "general-purpose",
+      "priority": "critical",
+      "dependsOn": ["story-5"],
+      "estimatedFiles": 1,
+      "acceptanceCriteria": [
+        "conformance/runner-contract.md exists",
+        "All 10 required sections are present with no TBD placeholders",
+        "Input envelope schema documents all fields including precondition",
+        "Format validation patterns table includes all 4 rows with regex strings",
+        "AVO_INSPECTOR_MOCK_ENDPOINT is documented",
+        "Exit codes 0/1/2 are defined",
+        "No TBD sections anywhere in the file"
+      ],
+      "qualityChecks": [
+        {
+          "command": "npx markdownlint-cli2 conformance/runner-contract.md",
+          "required": true,
+          "description": "Validate Markdown syntax"
+        },
+        {
+          "command": "grep -i 'tbd\\|to be defined\\|todo' conformance/runner-contract.md && echo 'FAIL: TBD sections found' && exit 1 || echo 'OK: no TBD sections'",
+          "required": true,
+          "description": "Ensure no TBD or TODO sections remain"
+        },
+        {
+          "command": "for section in \"Entry point\" \"Invocation protocol\" \"Input envelope\" \"Output envelope\" \"Exit codes\" \"AVO_INSPECTOR_MOCK_ENDPOINT\" \"Format validation\" \"Mock server\" \"Implementation checklist\"; do grep -q \"$section\" conformance/runner-contract.md || (echo \"FAIL: Missing section: $section\" && exit 1); done && echo \"OK: all required sections present\"",
+          "required": true,
+          "description": "Verify all 9 critical section keywords are present — markdownlint only validates syntax, not content completeness; a missing section breaks harness implementors"
+        }
+      ],
+      "status": "pending",
+      "testPattern": null
+    },
+    {
+      "id": "story-8",
+      "title": "AGENTS.md: Complete AI Agent SDK Generation Guide",
+      "description": "Replace the AGENTS.md stub with the complete version. Must contain all 5 required sections: (1) What to build, (2) Files to read in order, (3) SDK generation checklist (minimum 12 binary pass/fail items including flush for non-Node, enableLogging process-wide, exact wire body fields), (4) How to run conformance with exact command, (5) Definition of done referencing all 19 acceptance criteria.",
+      "approach": "general-purpose",
+      "priority": "critical",
+      "dependsOn": ["story-7"],
+      "estimatedFiles": 1,
+      "acceptanceCriteria": [
+        "AGENTS.md contains all 5 required sections",
+        "Section 2 lists files in the correct reading order: AGENTS.md → SPEC.md → openapi.yaml → schemas/ → conformance/runner-contract.md → conformance/schema-extraction/fixtures.json → conformance/wire-protocol/fixtures.json",
+        "Section 3 contains at least 12 binary pass/fail checklist items",
+        "Section 3 includes the flush() requirement for non-Node SDKs",
+        "Section 3 includes the enableLogging process-wide requirement",
+        "Section 4 contains the exact string: echo '<fixture-json>' | avo-inspector-conformance",
+        "Section 5 references all 19 acceptance criteria in SPEC.md",
+        "No ambiguous language (\"should\", \"might\", \"probably\") — only RFC 2119 MUST/SHOULD/MAY or concrete imperatives"
+      ],
+      "qualityChecks": [
+        {
+          "command": "npx markdownlint-cli2 AGENTS.md",
+          "required": true,
+          "description": "Validate Markdown syntax"
+        },
+        {
+          "command": "grep -c '\\[ \\]' AGENTS.md | awk '{if($1 < 12) {print \"FAIL: too few checklist items in AGENTS.md (found \" $1 \")\"; exit 1} else print \"OK: \" $1 \" checklist items\"}'",
+          "required": true,
+          "description": "Verify Section 3 SDK generation checklist has at least 12 binary pass/fail items"
+        }
+      ],
+      "status": "pending",
+      "testPattern": null
+    },
+    {
+      "id": "story-9",
+      "title": "CHANGELOG.md and VERSIONING.md Final Pass",
+      "description": "Rewrite CHANGELOG.md and VERSIONING.md with complete content. CHANGELOG.md gets a header explaining [WIRE]/[SPEC] tags and a complete v1.0.0 [WIRE] entry listing all normative wire-protocol sections. VERSIONING.md gets the full semver policy, regeneration rules, and spec version declaration guidance.",
+      "approach": "general-purpose",
+      "priority": "low",
+      "dependsOn": ["story-8"],
+      "estimatedFiles": 2,
+      "acceptanceCriteria": [
+        "CHANGELOG.md has a complete v1.0.0 entry tagged [WIRE]",
+        "CHANGELOG.md header explains the [WIRE]/[SPEC] distinction",
+        "VERSIONING.md defines MAJOR/MINOR/PATCH with downstream SDK regeneration requirements",
+        "VERSIONING.md explains how generated SDKs should declare the spec version",
+        "Both files are valid Markdown"
+      ],
+      "qualityChecks": [
+        {
+          "command": "npx markdownlint-cli2 CHANGELOG.md VERSIONING.md",
+          "required": true,
+          "description": "Validate Markdown syntax for both files"
+        }
+      ],
+      "status": "pending",
+      "testPattern": null
+    }
+  ]
+}
