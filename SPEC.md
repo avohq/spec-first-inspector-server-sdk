@@ -236,6 +236,12 @@ instances), not per-instance.
 global. An implementation where `enableLogging(true)` on one instance does not affect behavior
 of another instance is non-conformant.
 
+**Production hazard:** Callers MUST NOT call `enableLogging(true)` in production contexts.
+Because the flag is process-wide, enabling logging in a shared process affects all Inspector
+instances, including those operating in production environments. This is particularly relevant
+in monorepos, test helpers, and serverless warm containers where dev-mode and production
+instances may coexist in the same process.
+
 Language-specific canonical approaches:
 
 - **Java:** `private static boolean logsEnabled` with `static` accessor methods

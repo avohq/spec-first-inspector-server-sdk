@@ -74,7 +74,7 @@
     },
     "publicEncryptionKey": {
       "type": "string",
-      "description": "P-256 public key in hex. Present only when provided at constructor time."
+      "description": "P-256 public key in hex (compressed 66 chars or uncompressed 130 chars). Present only when provided at constructor time."
     },
     "type": {
       "type": "string",

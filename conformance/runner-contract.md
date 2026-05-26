@@ -48,13 +48,21 @@ The suite runner invokes the harness by piping one JSON line to stdin:
 echo '<fixture-json>' | avo-inspector-conformance
 ```
 
+The suite runner MUST inject the `suite` field into the input envelope before piping it to the
+harness. The `suite` value is derived from the parent directory name of the fixture file
+(e.g., `conformance/schema-extraction/fixtures.json` → `suite: "schema-extraction"`).
+
 The harness MUST:
 
 1. Read exactly one line of JSON from stdin.
 2. Parse the input envelope (see [Input envelope](#input-envelope)).
-3. Construct an `AvoInspector` instance using the `constructor` options from the envelope.
+3. If `suite` is `"schema-extraction"`: treat the entire `input` field as the `eventProperties`
+   argument to `extractSchema()` and proceed to step 5.
+   Otherwise: construct an `AvoInspector` instance using the `constructor` options from the
+   envelope.
 4. Apply any `precondition` state (see [`precondition` field](#precondition)).
-5. Invoke the operation named in the `operation` field with the `input` payload.
+5. Invoke the operation named in the `operation` field (or `extractSchema()` for the
+   `schema-extraction` suite) with the appropriate input.
 6. Capture the result (resolved value or rejection reason).
 7. Write exactly one line of JSON to stdout (the output envelope — see [Output envelope](#output-envelope)).
 8. Exit with the appropriate exit code (see [Exit codes](#exit-codes)).
@@ -76,11 +84,11 @@ The input envelope is a JSON object with the following fields.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `suite` | string | YES | Suite identifier: `"schema-extraction"`, `"wire-protocol"`, `"deduplication"`, or `"error-handling"`. |
+| `suite` | string | YES — injected by runner | Suite identifier: `"schema-extraction"`, `"wire-protocol"`, `"deduplication"`, or `"error-handling"`. NOT present in fixture files; the suite runner MUST inject this field from the parent directory name before passing the envelope to the harness. |
 | `fixture_id` | string | YES | Unique identifier for this fixture (e.g., `"wire-1"`, `"fixture-3"`). MUST be echoed in the output envelope. |
-| `constructor` | object | YES | Options passed verbatim to the `AvoInspector` constructor. |
-| `operation` | string | YES | SDK method to invoke: `"extractSchema"`, `"trackSchemaFromEvent"`, or `"_avoFunctionTrackSchemaFromEvent"`. |
-| `input` | object | YES | Operation-specific input payload. Shape depends on `operation` (see below). |
+| `constructor` | object | YES — except `schema-extraction` | Options passed verbatim to the `AvoInspector` constructor. Absent for `schema-extraction` fixtures; the harness MUST NOT require it when `suite` is `"schema-extraction"`. |
+| `operation` | string | YES — except `schema-extraction` | SDK method to invoke: `"extractSchema"`, `"trackSchemaFromEvent"`, or `"_avoFunctionTrackSchemaFromEvent"`. Absent for `schema-extraction` fixtures; the harness MUST call `extractSchema()` directly when `suite` is `"schema-extraction"`. |
+| `input` | object | YES | Operation-specific input payload. For `schema-extraction`, the entire `input` object IS the `eventProperties` argument. For other suites, shape depends on `operation` (see below). |
 | `precondition` | object | NO | State to apply to the SDK instance before invoking the operation. See [`precondition`](#precondition). |
 | `mock_response` | object or null | NO | Response configuration for the mock server. Present only when a wire-protocol HTTP call is expected. `null` means no HTTP call is expected. |
 
