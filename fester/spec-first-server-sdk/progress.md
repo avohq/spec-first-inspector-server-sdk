@@ -14,3 +14,5 @@ Batches (respecting dependencies):
 All stories use general-purpose subagent. Project is greenfield docs/specs generation.
 
 ## Story Log
+
+- story-1: Repo Skeleton — PASS (100/100) — attempt 1
