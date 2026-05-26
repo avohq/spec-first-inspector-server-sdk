@@ -1,0 +1,130 @@
+[
+  {
+    "fixture_id": "wire-1",
+    "description": "Basic event with primitive properties sends correct wire body",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "User Signed Up",
+      "eventProperties": { "plan": "pro", "seats": 3 },
+      "streamId": "stream-abc"
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": "1.0.0",
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "anonymousId": "stream-abc",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "User Signed Up",
+        "eventProperties": [
+          { "propertyName": "plan", "propertyType": "string" },
+          { "propertyName": "seats", "propertyType": "int" }
+        ],
+        "avoFunction": false,
+        "eventId": null,
+        "eventHash": null
+      }
+    ],
+    "expected_promise_outcome": "resolve",
+    "notes": "libVersion, messageId, and createdAt are validated by format only (not exact value) — their placeholder values signal format-validation to the suite runner. libVersion must be a plain SemVer string (e.g., '1.2.0'). libPlatform must be a non-empty string matching the SDK language."
+  },
+  {
+    "fixture_id": "wire-2",
+    "description": "Event is dropped when samplingRate is 0.0 (effectively drop all)",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0" },
+    "operation": "trackSchemaFromEvent",
+    "input": { "eventName": "Dropped Event", "eventProperties": { "x": 1 } },
+    "precondition": { "samplingRate": 0.0 },
+    "mock_response": null,
+    "expected_request_count": 0,
+    "expected_promise_outcome": "resolve",
+    "notes": "Harness must set internal samplingRate to 0.0 before invoking. No HTTP call should be made. Suite runner verifies zero captured requests at mock server."
+  },
+  {
+    "fixture_id": "wire-3",
+    "description": "Non-200 HTTP response resolves the promise (does not reject)",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0" },
+    "operation": "trackSchemaFromEvent",
+    "input": { "eventName": "Test Event", "eventProperties": {} },
+    "mock_response": { "status": 500, "body": {} },
+    "expected_promise_outcome": "resolve",
+    "expected_resolve_value": [],
+    "notes": "SDK MUST resolve (not reject) on non-200. Resolved value is [] (empty event properties yield empty schema)."
+  },
+  {
+    "fixture_id": "wire-4",
+    "description": "streamId containing colon characters is passed through verbatim as anonymousId",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "Page Viewed",
+      "eventProperties": {},
+      "streamId": "stream:with:colons"
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": "1.0.0",
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "anonymousId": "stream:with:colons",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "Page Viewed",
+        "eventProperties": [],
+        "avoFunction": false,
+        "eventId": null,
+        "eventHash": null
+      }
+    ],
+    "expected_promise_outcome": "resolve",
+    "notes": "SDK MUST warn about colon-containing streamId per spec Edge Case 9, but MUST still send the event with the verbatim streamId value. The colon is not a fatal error — anonymousId must be 'stream:with:colons' exactly as provided."
+  },
+  {
+    "fixture_id": "wire-5",
+    "description": "Empty string streamId is treated as no stream ID; anonymousId becomes empty string",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "Page Viewed",
+      "eventProperties": {},
+      "streamId": ""
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": "1.0.0",
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "anonymousId": "",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "Page Viewed",
+        "eventProperties": [],
+        "avoFunction": false,
+        "eventId": null,
+        "eventHash": null
+      }
+    ],
+    "expected_promise_outcome": "resolve",
+    "notes": "Empty streamId MUST be treated as 'no stream ID' per spec Edge Case 10. The anonymousId field in the wire body MUST be the empty string ''."
+  }
+]
