@@ -24,3 +24,4 @@ All stories use general-purpose subagent. Project is greenfield docs/specs gener
 - story-7: runner-contract.md — PASS (100/100) — attempt 2 (1st died on socket error)
 - story-8: AGENTS.md — PASS (100/100) — attempt 1
 - story-9: CHANGELOG/VERSIONING final — PASS (100/100) — attempt 1
+- Cousin Itt iteration 1: architect 81, security 74, code 76, ux 78 -> avg 77.25/100

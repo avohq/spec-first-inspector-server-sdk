@@ -37,6 +37,10 @@ Read every file in this order before writing any code. Do not skip files.
    Your `extractSchema` implementation MUST produce the exact `expected` output for each `input`.
 7. **`conformance/wire-protocol/fixtures.json`** — Wire-protocol golden fixtures (wire-1 through
    wire-5). Your `trackSchemaFromEvent` implementation MUST pass all of these.
+8. **`conformance/error-handling/fixtures.json`** — Error-handling fixtures. Your implementation
+   MUST pass all of these (REQUIRED suite).
+9. **`conformance/deduplication/fixtures.json`** — Deduplication fixtures (OPTIONAL suite).
+   Your implementation SHOULD pass these; they do not block a conformance pass grade.
 
 ---
 
@@ -49,10 +53,14 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 - [ ] Constructor throws synchronously with the exact message
   `"[Avo Inspector] No API key provided. Inspector can't operate without API key."`
   when `apiKey` is absent, empty, or whitespace-only (SPEC.md §4.1).
-- [ ] Constructor throws synchronously with the exact message for missing `version`:
-  `"[Avo Inspector] No version provided. Many features of Inspector rely on versioning.`
-  `Please provide comparable string version, i.e. integer or semantic."`
-  when `version` is absent, empty, or whitespace-only (SPEC.md §4.1).
+- [ ] Constructor throws synchronously with the exact message for missing `version`
+  (copy as a single string — do not split across lines):
+
+  ```text
+  [Avo Inspector] No version provided. Many features of Inspector rely on versioning. Please provide comparable string version, i.e. integer or semantic.
+  ```
+
+  Throw when `version` is absent, empty, or whitespace-only (SPEC.md §4.1).
 - [ ] Invalid or absent `env` falls back to `"dev"` and emits a console warning. The constructor
   MUST NOT throw on invalid `env` (SPEC.md §4.1, §6.3).
 - [ ] When `env == "dev"`, logging is enabled by default (`shouldLog = true`).
@@ -79,17 +87,15 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 - [ ] `trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v1/track` (HTTPS, port 443)
   unless `AVO_INSPECTOR_MOCK_ENDPOINT` is set, in which case it MUST POST to that URL
   verbatim (SPEC.md §7.1).
-- [ ] Every outgoing request body is a JSON array with exactly one event object. The event object
-  MUST contain all of these fields (SPEC.md §7.3):
-  `anonymousId`, `apiKey`, `type`, `env`, `libVersion`, `libPlatform`, `samplingRate`,
-  `sessionId` (omit — MUST NOT be sent), `createdAt`, `trackingId` (omit — MUST NOT be sent),
-  `messageId`, `eventName`, `eventProperties`, `avoFunction`, `eventId`, `eventHash`,
-  `appName`, `appVersion`.
+- [ ] Every outgoing request body is a JSON array with exactly one event object (SPEC.md §7.3).
 
-  Required fields enumerated explicitly: `anonymousId`, `apiKey`, `appName`, `appVersion`,
-  `avoFunction`, `createdAt`, `env`, `eventHash`, `eventId`, `eventName`, `eventProperties`,
-  `libPlatform`, `libVersion`, `messageId`, `samplingRate`, `type`.
-  `sessionId` and `trackingId` MUST NOT appear.
+  **Required fields (MUST be present in every wire body):**
+  `anonymousId`, `apiKey`, `appName`, `appVersion`, `avoFunction`, `createdAt`, `env`,
+  `eventHash`, `eventId`, `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
+  `messageId`, `samplingRate`, `type`.
+
+  **Forbidden fields (MUST NOT appear in any wire body):**
+  `sessionId`, `trackingId`.
 - [ ] `libVersion` MUST be a plain SemVer string (e.g., `"1.2.0"`). No suffix (`+spec`, `-rc1`,
   etc.) is permitted. Define it as a constant in a dedicated version file (SPEC.md §7.3.3).
 - [ ] `messageId` MUST be a UUID v4, lowercase hex, hyphenated, unique per event object.
@@ -103,7 +109,9 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 ### Error Handling and Resilience
 
 - [ ] Non-200 HTTP responses MUST resolve the `trackSchemaFromEvent` promise (MUST NOT reject).
-  Resolved value is `[]` when event properties are empty (SPEC.md §7.4, §7.5).
+  Resolved value is ALWAYS `[]` on non-200 — even when `eventProperties` was non-empty
+  (SPEC.md §4.2 step 4, §7.4, §7.5). The `error-2` fixture (non-empty props + 400 → `[]`)
+  is the source of truth.
 - [ ] Network timeout (10 s) and network errors are swallowed inside the internal send handler.
   `trackSchemaFromEvent` MUST resolve with the extracted event schema even when the HTTP call
   fails or times out (SPEC.md §7.5, §7.6).
@@ -122,6 +130,14 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   all non-Node.js implementations.
 - [ ] `flush()` MUST be documented in the SDK README as required before process exit or function
   handler return (serverless) when events may be in-flight (SPEC.md §3.4, §13.2, §13.3).
+
+### Lifecycle
+
+- [ ] `destroy()` is implemented and after `destroy()`, `trackSchemaFromEvent()` is a no-op
+  (returns `Promise.resolve([])`). `pendingCount` MUST be `0` and the keepalive timer MUST be
+  cleared after `destroy()`. Constructor options (`apiKey`, `env`, `version`, `appName`,
+  `samplingRate`) and the process-wide `shouldLog` flag MUST NOT be reset (SPEC.md §4.5,
+  AC-19).
 
 ---
 

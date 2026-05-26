@@ -144,6 +144,12 @@ to the SDK instance before invoking the operation.
 Example: wire-2 fixture sets `samplingRate: 0.0` to verify that the SDK drops the event without
 making an HTTP call.
 
+> **Security requirement:** The internal setter or test hook used by the harness to override
+> `samplingRate` MUST be test-only — compiled out of production builds, package-private,
+> marked `@internal`, or otherwise not exposed in the SDK's documented public API. Exposing
+> a public `setSamplingRate` method would allow callers to force `samplingRate = 0` and
+> silently disable all telemetry.
+
 The harness MUST apply all `precondition` fields before invoking the operation. If a
 `precondition` field is not supported by the harness implementation, the harness MUST exit with
 code `2` and write an error to the output envelope.
@@ -266,6 +272,11 @@ SDKs MUST send POST requests directly to this URL.
 **Scope:** `AVO_INSPECTOR_MOCK_ENDPOINT` is a test-only override. Production SDKs SHOULD NOT
 expose this variable in their public documentation; it is documented here for harness
 implementors only.
+
+**Security requirement:** SDKs MUST gate `AVO_INSPECTOR_MOCK_ENDPOINT` behind a test-only
+build flag, debug build, or environment-restriction check. Production builds MUST NOT honor
+this variable. Honoring it in production would allow HTTP downgrade attacks by redirecting
+traffic to an attacker-controlled endpoint.
 
 ---
 

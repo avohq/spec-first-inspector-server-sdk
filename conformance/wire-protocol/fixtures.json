@@ -91,7 +91,7 @@
       }
     ],
     "expected_promise_outcome": "resolve",
-    "notes": "SDK MUST warn about colon-containing streamId per spec Edge Case 9, but MUST still send the event with the verbatim streamId value. The colon is not a fatal error — anonymousId must be 'stream:with:colons' exactly as provided."
+    "notes": "SDK MUST warn about colon-containing streamId per SPEC.md §4.2 (streamId rules), but MUST still send the event with the verbatim streamId value. The colon is not a fatal error — anonymousId must be 'stream:with:colons' exactly as provided."
   },
   {
     "fixture_id": "wire-5",
@@ -125,6 +125,6 @@
       }
     ],
     "expected_promise_outcome": "resolve",
-    "notes": "Empty streamId MUST be treated as 'no stream ID' per spec Edge Case 10. The anonymousId field in the wire body MUST be the empty string ''."
+    "notes": "Empty streamId MUST be treated as 'no stream ID' per SPEC.md §4.2 (streamId rules) and §8.2. The anonymousId field in the wire body MUST be the empty string ''."
   }
 ]

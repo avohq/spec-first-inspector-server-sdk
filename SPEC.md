@@ -171,7 +171,10 @@ trackSchemaFromEvent(
    MUST return `Promise.resolve([])` immediately without sending an HTTP request.
 3. If not deduplicated: calls `extractSchema(eventProperties)`, then sends the extracted schema
    to the Inspector API (see Section 7).
-4. Returns a promise that resolves to the extracted schema array (or `[]` if deduplicated).
+4. Returns a promise that resolves to the extracted schema array (or `[]` if deduplicated). On
+   a non-200 HTTP response, the promise still resolves but with `[]` regardless of whether
+   `eventProperties` was non-empty (see §7.5 error taxonomy). The fixture `error-2` (non-empty
+   props + 400 → `[]`) is the source of truth for this behavior.
 5. On any synchronous internal error (e.g., stream ID validation throwing): MUST log to
    `console.error` (or language-equivalent) and MUST return
    `Promise.reject("Avo Inspector: something went wrong. Please report to support@avo.app.")`.
@@ -385,9 +388,16 @@ POST https://api.avo.app/inspector/v1/track
 - **Port:** 443 (implicit for HTTPS)
 - **Path:** `/inspector/v1/track`
 - **Method:** POST
+- **TLS validation:** SDKs MUST use the host platform's default TLS certificate validation.
+  SDKs MUST NOT provide any configuration option to disable certificate validation.
 
 When the environment variable `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST send HTTP
 calls to that URL instead of `https://api.avo.app`. This is used by the conformance suite.
+
+> **Security requirement:** SDKs MUST gate `AVO_INSPECTOR_MOCK_ENDPOINT` behind a test-only
+> build flag, debug build, or environment-restriction check. Production builds MUST NOT honor
+> this variable. Honoring this variable in production would allow HTTP downgrade attacks by
+> redirecting traffic to an attacker-controlled endpoint.
 
 ### 7.2 Request Headers
 
@@ -556,6 +566,13 @@ catch block intercepts only synchronous throws (e.g., stream ID validation throw
 network errors are swallowed inside the internal send handler and MUST NOT reach the outer
 catch block.
 
+### 7.5.1 Security Constraints on Error Logging
+
+SDKs MUST NOT log the `apiKey` value, the `publicEncryptionKey` value, or full request bodies
+that contain the `apiKey`. Error logs MUST redact these fields if they appear in an error
+object or response body before passing the error to `console.error` or the language-equivalent
+logging facility.
+
 ### 7.6 Timeout
 
 - Request timeout: **10 seconds**. Implementations MUST apply this timeout to every outbound
@@ -720,6 +737,31 @@ conformance fixture 3 is:
 > generated SDKs in statically-typed languages where `0.0` and `0` are genuinely different
 > runtime types. The Node.js reference SDK produces `"int"` for `0.0` because `Number.isInteger`
 > returns `true`. Generated SDKs in statically-typed languages MUST use the declared type.
+
+#### 9.3.1.1 Parser Configuration Requirements
+
+When a conformance fixture is delivered via JSON stdin (e.g., from the conformance harness), the
+host language's JSON parser MUST be configured to preserve the `int` vs. `float` distinction in
+the literal source. Most default JSON parsers lose this distinction.
+
+**Per-language requirements:**
+
+| Language | Default behavior | Required configuration |
+|---|---|---|
+| **JavaScript** | `JSON.parse` produces `number` for both `0` and `0.0` | Use `Number.isInteger()` per existing guidance in §9.3.1 |
+| **Python** | `json.loads` maps all numbers to `int` or `float` based on presence of decimal point — correctly preserves distinction by default | No special config needed |
+| **Go** | `encoding/json` maps all JSON numbers to `float64` by default — loses distinction | MUST use `json.Decoder` with `UseNumber()` to get `json.Number`, then check `strings.Contains(n.String(), ".")` or attempt integer parse |
+| **Java** | Jackson maps JSON numbers to `int`/`long`/`double` based on magnitude — may lose `0.0` vs `0` distinction | MUST enable `DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS` or use `JsonNode.isFloatingPointNumber()` |
+| **C#** | `System.Text.Json` maps JSON numbers: integers to `long`, decimals to `double` — preserves `.0` presence via `GetRawText()` | Use `JsonElement.GetRawText()` and check for decimal point in source |
+| **Ruby** | `JSON.parse` maps integers to `Integer` and floats to `Float` by default — correctly preserves distinction | No special config needed |
+| **Rust** | `serde_json` preserves `i64` vs `f64` distinction by default when using typed deserialization | Use `serde_json::Value` which distinguishes `Number` with integer vs. float variants |
+
+**Normative rule:** For SDKs whose host language JSON parser conflates `0` and `0.0` by default,
+the conformance harness MUST configure the parser to preserve the literal-source `int` vs.
+`float` distinction. The fixture input JSON `{"d": 0.0}` MUST be parsed such that `d` is
+treated as a float, not an integer. This is a harness configuration requirement — the SDK's
+own `extractSchema` method operates on the host language's native types and MUST use the
+declared/runtime type as the authority.
 
 #### 9.3.2 Recursion Depth
 
@@ -1094,7 +1136,7 @@ deduplicated. The dedup key includes `streamId`, making them distinct keys.
 
 > **Cross-bucket multi-step conformance requires manual testing.**
 >
-> The single-invocation harness protocol (Section 12 of `conformance/runner-contract.md`) cannot
+> The single-invocation harness protocol (see "Implementation checklist" in `conformance/runner-contract.md`) cannot
 > support stateful multi-step sequences where one invocation sets up bucket state for a second
 > invocation. SDK authors MUST manually verify cross-bucket dedup scenarios (e.g.,
 > `_avoFunctionTrackSchemaFromEvent` followed by `trackSchemaFromEvent` suppression) by writing

@@ -82,11 +82,19 @@ applied to each element after `removeDuplicates`:
 
 Result: `["float", "string", [{"propertyName": "three", "propertyType": "int"}]]`
 
+## Parser Configuration for Fixture Input
+
+When reading fixture input from JSON, some language JSON parsers conflate `0` and `0.0`.
+The harness MUST configure its JSON parser to preserve the `int` vs. `float` distinction
+so that fixture-3's `{"d": 0.0}` input is correctly treated as a float.
+
+See **SPEC.md §9.3.1.1** for the per-language parser configuration requirements table.
+
 ## Running Against This Suite
 
-Implement a conformance harness per the runner contract in `SPEC.md`. For schema-extraction
-fixtures, invoke your SDK's `extractSchema` method with the `input` value and compare the
-result against `expected` using deep structural equality.
+Implement a conformance harness per the runner contract in `conformance/runner-contract.md`.
+For schema-extraction fixtures, invoke your SDK's `extractSchema` method with the `input`
+value and compare the result against `expected` using deep structural equality.
 
 ```sh
 # Validate fixture JSON is parseable

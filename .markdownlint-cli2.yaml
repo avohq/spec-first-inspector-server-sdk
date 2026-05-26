@@ -3,4 +3,8 @@ config:
     line_length: 120
     tables: false
     code_blocks: false
+    code_spans: false
   MD060: false
+ignores:
+  - "fester/**"
+  - "planning/**"
