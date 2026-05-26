@@ -22,3 +22,5 @@ All stories use general-purpose subagent. Project is greenfield docs/specs gener
 - story-5: wire-protocol fixtures — PASS (95/100) — attempt 1
 - story-6: dedup+error fixtures — PASS (100/100) — attempt 1
 - story-7: runner-contract.md — PASS (100/100) — attempt 2 (1st died on socket error)
+- story-8: AGENTS.md — PASS (100/100) — attempt 1
+- story-9: CHANGELOG/VERSIONING final — PASS (100/100) — attempt 1

@@ -2,6 +2,10 @@
 
 All notable changes to this spec repository are documented here.
 
+This changelog covers the `avohq/spec-first-inspector-server-sdk` specification repository —
+not any generated SDK. The normative contract is defined in [`SPEC.md`](./SPEC.md).
+Instructions for AI coding agents are in [`AGENTS.md`](./AGENTS.md).
+
 ## Tagging Convention
 
 Each entry is tagged to signal the urgency for downstream SDK authors:
@@ -13,6 +17,9 @@ Each entry is tagged to signal the urgency for downstream SDK authors:
   conformance fixture for existing behavior). Downstream SDKs **MAY** ignore
   these entries; regeneration is optional.
 
+See [`VERSIONING.md`](./VERSIONING.md) for the full semver policy and per-language
+spec version declaration patterns.
+
 ---
 
 ## [1.0.0] - 2026-05-25 `[WIRE]`
@@ -22,6 +29,26 @@ Initial publication of the `avohq/spec-first-inspector-server-sdk` spec.
 All content in this release is wire-protocol normative. Downstream SDKs
 generated from v1.0.0 need not regenerate until a `[WIRE]`-tagged release
 appears.
+
+### Normative Deliverables Shipped
+
+| Artifact | Description |
+|---|---|
+| `SPEC.md` | Full normative prose specification (RFC 2119 language, 15 sections) |
+| `AGENTS.md` | AI-agent SDK generation guide: checklist, reading order, conformance, definition of done (19 ACs) |
+| `openapi.yaml` | OpenAPI 3.1 document for the Inspector HTTP API |
+| `schemas/base-body.json` | JSON Schema: base request body fields |
+| `schemas/event-batch.json` | JSON Schema: top-level request array |
+| `schemas/event-body.json` | JSON Schema: plain event body |
+| `schemas/event-body-encrypted.json` | JSON Schema: encrypted event body |
+| `schemas/event-property-plain.json` | JSON Schema: plain property object |
+| `schemas/event-property-encrypted.json` | JSON Schema: encrypted property object |
+| `schemas/schema-entry.json` | JSON Schema: schema extraction entry |
+| `conformance/schema-extraction/fixtures.json` | 13 golden schema-extraction fixtures |
+| `conformance/wire-protocol/fixtures.json` | 5 wire-protocol golden fixtures (wire-1 through wire-5) |
+| `conformance/error-handling/fixtures.json` | 3 error-handling fixtures (network timeout, network error, non-200) |
+| `conformance/deduplication/fixtures.json` | 2 deduplication fixtures (OPTIONAL — conformance grade not blocked) |
+| `conformance/runner-contract.md` | Normative stdin/stdout harness protocol |
 
 ### Wire-Protocol Normative Content
 
@@ -46,10 +73,30 @@ appears.
   with exact error message strings
 - **`enableLogging` scope:** process-wide (class-level), not per-instance
 - **`destroy()` contract:** resets `pendingCount` to 0, clears keepalive timer
-- **`flush()` requirement:** non-Node SDKs MUST implement; resolves (not
-  rejects) once all pending sends complete or are abandoned
+
+### New Requirements vs. Node.js Reference SDK
+
+- **`flush()` requirement (new):** Non-Node.js SDKs MUST implement `flush()`.
+  This method is not present in the Node.js reference SDK, which uses a 60-second
+  keepalive timer instead. Non-Node.js runtimes MUST NOT use the keepalive timer
+  approach (it causes hangs); they MUST expose `flush()` and document it as
+  required before process or function-handler exit. Default timeout: 10,000 ms.
+  `flush()` MUST resolve (not reject) in all cases. See SPEC.md §4.6 and §13.
+
+### Spec Design Intents
+
+- **`0.0` → `"float"` (design intent):** The `getBasicPropType` classification
+  MUST return `"float"` for a float-zero value (`0.0`). In statically-typed
+  languages (Go, Java, Rust, C#), the declared type is authoritative: `float64(0.0)`
+  → `"float"`. In JavaScript, `0.0` and `0` are runtime-identical; the spec
+  intentionally requires `"float"` here, which differs from the Node.js reference
+  SDK output of `"int"` for `Number.isInteger(0.0) == true`. This is a forward-looking
+  requirement for generated SDKs in languages where `0.0` and `0` are genuinely
+  distinct types. See SPEC.md §9.3.1.
+
+### Optional Features
+
 - **Deduplication:** OPTIONAL; 500 ms window, per-stream keying, two-bucket
-  (manual vs. Codegen) algorithm
-- **Encryption:** opt-in; ECIES P-256; applies in dev/staging only
-- **Conformance suite:** schema-extraction (13 fixtures), wire-protocol
-  (5 fixtures), error-handling (3 fixtures), deduplication (2 fixtures, OPTIONAL)
+  (manual vs. Codegen) algorithm. Conformance fixtures are OPTIONAL and do not
+  block a conformance grade.
+- **Encryption:** opt-in; ECIES P-256; applies in dev/staging only.

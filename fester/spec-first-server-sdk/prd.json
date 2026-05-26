@@ -298,7 +298,7 @@
           "description": "Verify Section 3 SDK generation checklist has at least 12 binary pass/fail items"
         }
       ],
-      "status": "in_progress",
+      "status": "completed",
       "testPattern": null
     },
     {
@@ -325,7 +325,7 @@
           "description": "Validate Markdown syntax for both files"
         }
       ],
-      "status": "pending",
+      "status": "completed",
       "testPattern": null
     }
   ]
