@@ -194,5 +194,42 @@
     ],
     "expected_promise_outcome": "resolve",
     "notes": "The serialized body exceeds the 1024-byte gzip threshold (SPEC.md §7.3.7), so a conformant SDK SHOULD send it with 'Content-Encoding: gzip'. Compression is OPTIONAL: this fixture passes whether the body is sent compressed or uncompressed. The mock server MUST gunzip the body before parsing when 'content-encoding: gzip' is present; the decompressed body MUST match expected_request_body byte-for-byte after format validation. If the SDK sends 'Content-Encoding: gzip' but the bytes fail to gunzip, the fixture MUST fail."
+  },
+  {
+    "fixture_id": "wire-7",
+    "description": "Small body (< 1024 bytes) is sent uncompressed with no Content-Encoding header",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "Small Event",
+      "eventProperties": { "plan": "pro" },
+      "streamId": "stream-small"
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": "1.0.0",
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "anonymousId": "stream-small",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "Small Event",
+        "eventProperties": [
+          { "propertyName": "plan", "propertyType": "string" }
+        ],
+        "avoFunction": false,
+        "eventId": null,
+        "eventHash": null
+      }
+    ],
+    "expected_request_headers": { "content-encoding": null },
+    "expected_promise_outcome": "resolve",
+    "notes": "The serialized body is well below the 1024-byte gzip threshold (SPEC.md §7.3.7). The SDK MUST send it uncompressed: the request MUST NOT carry a 'Content-Encoding' header. The suite runner asserts header absence via expected_request_headers: { content-encoding: null }."
   }
 ]

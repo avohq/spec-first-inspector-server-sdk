@@ -45,7 +45,7 @@ appears.
 | `schemas/event-property-encrypted.json` | JSON Schema: encrypted property object |
 | `schemas/schema-entry.json` | JSON Schema: schema extraction entry |
 | `conformance/schema-extraction/fixtures.json` | 13 golden schema-extraction fixtures |
-| `conformance/wire-protocol/fixtures.json` | 6 wire-protocol golden fixtures (wire-1 through wire-6) |
+| `conformance/wire-protocol/fixtures.json` | 7 wire-protocol golden fixtures (wire-1 through wire-7) |
 | `conformance/error-handling/fixtures.json` | 3 error-handling fixtures (network timeout, network error, non-200) |
 | `conformance/deduplication/fixtures.json` | 2 deduplication fixtures (OPTIONAL — conformance grade not blocked) |
 | `conformance/runner-contract.md` | Normative stdin/stdout harness protocol |
@@ -81,7 +81,9 @@ appears.
   uncompressed body when below the threshold, when no gzip implementation is
   available, or on a compression error. Ported from the JS Inspector SDK
   ([avohq/js-avo-inspector#212](https://github.com/avohq/js-avo-inspector/pull/212)),
-  adapted for server-side runtimes. See SPEC.md §7.2 and §7.3.7; `wire-6` fixture.
+  adapted for server-side runtimes. See SPEC.md §7.2 and §7.3.7; conformance
+  fixtures `wire-6` (large body, gzip transparent) and `wire-7` (small body MUST
+  be uncompressed), asserted via the new `expected_request_headers` field.
 
 ### New Requirements vs. Node.js Reference SDK
 

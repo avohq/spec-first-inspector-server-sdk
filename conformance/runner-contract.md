@@ -338,7 +338,9 @@ The suite runner MUST:
 5. Compare captured request bodies against `expected_request_body` using format-validation for
    placeholder fields.
 6. Assert that the number of captured requests matches `expected_request_count` (when specified).
-7. Stop or reset the mock server between fixtures.
+7. Assert recorded request headers against `expected_request_headers` when present (see
+   [`expected_request_headers` assertions](#expected_request_headers-assertions)).
+8. Stop or reset the mock server between fixtures.
 
 ### Mock server API contract
 
@@ -375,8 +377,29 @@ The recorded `headers` MUST preserve `content-encoding` so the suite runner can 
 compression behavior. A `content-encoding: gzip` request whose bytes fail to gunzip MUST be
 recorded as a malformed request and MUST fail the fixture.
 
+Header names in the recorded `headers` map MUST be lowercased so assertions are
+case-insensitive on the name.
+
 **`POST /reset`** — Clears the captured request list. The suite runner SHOULD call this between
 fixtures to ensure each fixture starts with a clean request log.
+
+### `expected_request_headers` assertions
+
+A wire-protocol fixture MAY include an `expected_request_headers` object. When present, the
+suite runner MUST assert each entry against the headers of every recorded request (header names
+are matched case-insensitively). Each value is one of:
+
+| Expected value | Assertion |
+|---|---|
+| a literal string (e.g., `"gzip"`) | The header MUST be present and equal to this value exactly. |
+| `null` | The header MUST be **absent** from the request. |
+
+This is how a fixture asserts that a small body carries **no** `Content-Encoding`
+(`{ "content-encoding": null }`), or that a specific header value was sent. Because gzip
+compression is OPTIONAL (SPEC.md §7.3.7), a fixture for a large body MUST NOT assert
+`content-encoding: "gzip"` as a literal — doing so would fail a conformant SDK that opts out of
+compression. Use `expected_request_headers` only for headers whose presence/absence is
+normatively required for the given fixture.
 
 ### `mock_response` field
 

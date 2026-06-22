@@ -13,6 +13,7 @@ and correctly handles `streamId` edge cases.
 | `wire-4` | `streamId` with colons — verbatim passthrough as `anonymousId` (spec Edge Case 9) |
 | `wire-5` | Empty `streamId` — `anonymousId` becomes `""` (spec Edge Case 10) |
 | `wire-6` | Large body (≥ 1024 bytes) — gzip compression (SPEC.md §7.3.7), if applied, is valid and transparent |
+| `wire-7` | Small body (< 1024 bytes) — MUST be sent uncompressed (no `Content-Encoding` header) |
 
 ## How It Works
 
@@ -82,6 +83,7 @@ All four fields are **required** on every event sent. A missing field is a confo
   "precondition": { "samplingRate": 1.0 },
   "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
   "expected_request_body": [ { "...": "..." } ],
+  "expected_request_headers": { "content-encoding": null },
   "expected_request_count": 1,
   "expected_promise_outcome": "resolve | reject",
   "expected_resolve_value": [],
@@ -101,6 +103,7 @@ All four fields are **required** on every event sent. A missing field is a confo
 | `precondition` | NO | State to establish before invoking the operation. Harness MUST apply `samplingRate` override via internal setter or test hook before calling the operation. |
 | `mock_response` | NO | Response the mock server returns. `null` means no mock server is started (use when no HTTP call is expected). |
 | `expected_request_body` | NO | Array of expected JSON request bodies. Use when one or more HTTP calls are expected. |
+| `expected_request_headers` | NO | Object asserting request headers (case-insensitive names). A string value means the header MUST be present and equal; `null` means the header MUST be absent. See [runner-contract.md](../runner-contract.md#expected_request_headers-assertions). |
 | `expected_request_count` | NO | Expected number of HTTP calls. `0` asserts no HTTP call was made. When `expected_request_body` is present, count is implied by array length. |
 | `expected_promise_outcome` | YES | `"resolve"` or `"reject"`. |
 | `expected_resolve_value` | NO | Expected resolved value. May be omitted if the resolved value is unimportant. |
@@ -118,7 +121,7 @@ See [`conformance/runner-contract.md`](../runner-contract.md) for the full harne
 
 ## Conformance Definition
 
-An SDK **passes** the wire-protocol suite when all 6 fixtures pass:
+An SDK **passes** the wire-protocol suite when all 7 fixtures pass:
 
 - `wire-1`: The harness exits with code `0` and the mock server recorded exactly 1 request matching the
   expected body (with format validation applied to placeholder fields).
@@ -130,3 +133,5 @@ An SDK **passes** the wire-protocol suite when all 6 fixtures pass:
 - `wire-6`: The harness exits with code `0` and the mock server recorded exactly 1 request whose body
   (gunzipped first when `Content-Encoding: gzip` is present) matches the expected body. The fixture passes
   whether or not the body is compressed; a `gzip`-labeled body that fails to gunzip is a failure.
+- `wire-7`: The harness exits with code `0` and the mock server recorded exactly 1 request with **no**
+  `Content-Encoding` header (the body is below the 1024-byte gzip threshold, so it MUST be sent uncompressed).
