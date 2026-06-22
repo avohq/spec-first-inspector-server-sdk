@@ -346,7 +346,10 @@ The mock server MUST implement the following endpoints:
 
 **`POST /`** — Records the incoming request and returns the configured response.
 
-- Request body: the SDK's serialized JSON event array.
+- Request body: the SDK's serialized JSON event array. The body MAY be gzip-compressed (see
+  SPEC.md §7.3.7). When the request carries a `Content-Encoding: gzip` header, the mock server
+  MUST gunzip the raw bytes before parsing the JSON body. When the header is absent, the body
+  MUST be parsed as-is.
 - Response: the HTTP status and body from the fixture's `mock_response` field.
 - If `mock_response` is `null`, the mock server SHOULD NOT be started (the fixture expects zero
   HTTP calls). The suite runner MUST verify that zero requests were made.
@@ -360,14 +363,17 @@ Response body:
   {
     "method": "POST",
     "path": "/",
-    "headers": { "content-type": "application/json" },
+    "headers": { "content-type": "application/json", "content-encoding": "gzip" },
     "body": [ { "...": "..." } ]
   }
 ]
 ```
 
 Each element in the array represents one recorded request. `body` is the parsed JSON body of
-the POST request (the SDK's event array).
+the POST request (the SDK's event array) — decompressed first when `content-encoding` is `gzip`.
+The recorded `headers` MUST preserve `content-encoding` so the suite runner can assert
+compression behavior. A `content-encoding: gzip` request whose bytes fail to gunzip MUST be
+recorded as a malformed request and MUST fail the fixture.
 
 **`POST /reset`** — Clears the captured request list. The suite runner SHOULD call this between
 fixtures to ensure each fixture starts with a clean request log.

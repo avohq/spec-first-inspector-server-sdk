@@ -126,5 +126,73 @@
     ],
     "expected_promise_outcome": "resolve",
     "notes": "Empty streamId MUST be treated as 'no stream ID' per SPEC.md §4.2 (streamId rules) and §8.2. The anonymousId field in the wire body MUST be the empty string ''."
+  },
+  {
+    "fixture_id": "wire-6",
+    "description": "Large body (>= 1024 bytes) round-trips correctly; gzip compression, if applied, is valid and transparent",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "Large Payload Event",
+      "eventProperties": {
+        "attribute_01": "value", "attribute_02": "value", "attribute_03": "value",
+        "attribute_04": "value", "attribute_05": "value", "attribute_06": "value",
+        "attribute_07": "value", "attribute_08": "value", "attribute_09": "value",
+        "attribute_10": "value", "attribute_11": "value", "attribute_12": "value",
+        "attribute_13": "value", "attribute_14": "value", "attribute_15": "value",
+        "attribute_16": "value", "attribute_17": "value", "attribute_18": "value",
+        "attribute_19": "value", "attribute_20": "value", "attribute_21": "value",
+        "attribute_22": "value", "attribute_23": "value", "attribute_24": "value"
+      },
+      "streamId": "stream-large"
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": "1.0.0",
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "anonymousId": "stream-large",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "Large Payload Event",
+        "eventProperties": [
+          { "propertyName": "attribute_01", "propertyType": "string" },
+          { "propertyName": "attribute_02", "propertyType": "string" },
+          { "propertyName": "attribute_03", "propertyType": "string" },
+          { "propertyName": "attribute_04", "propertyType": "string" },
+          { "propertyName": "attribute_05", "propertyType": "string" },
+          { "propertyName": "attribute_06", "propertyType": "string" },
+          { "propertyName": "attribute_07", "propertyType": "string" },
+          { "propertyName": "attribute_08", "propertyType": "string" },
+          { "propertyName": "attribute_09", "propertyType": "string" },
+          { "propertyName": "attribute_10", "propertyType": "string" },
+          { "propertyName": "attribute_11", "propertyType": "string" },
+          { "propertyName": "attribute_12", "propertyType": "string" },
+          { "propertyName": "attribute_13", "propertyType": "string" },
+          { "propertyName": "attribute_14", "propertyType": "string" },
+          { "propertyName": "attribute_15", "propertyType": "string" },
+          { "propertyName": "attribute_16", "propertyType": "string" },
+          { "propertyName": "attribute_17", "propertyType": "string" },
+          { "propertyName": "attribute_18", "propertyType": "string" },
+          { "propertyName": "attribute_19", "propertyType": "string" },
+          { "propertyName": "attribute_20", "propertyType": "string" },
+          { "propertyName": "attribute_21", "propertyType": "string" },
+          { "propertyName": "attribute_22", "propertyType": "string" },
+          { "propertyName": "attribute_23", "propertyType": "string" },
+          { "propertyName": "attribute_24", "propertyType": "string" }
+        ],
+        "avoFunction": false,
+        "eventId": null,
+        "eventHash": null
+      }
+    ],
+    "expected_promise_outcome": "resolve",
+    "notes": "The serialized body exceeds the 1024-byte gzip threshold (SPEC.md §7.3.7), so a conformant SDK SHOULD send it with 'Content-Encoding: gzip'. Compression is OPTIONAL: this fixture passes whether the body is sent compressed or uncompressed. The mock server MUST gunzip the body before parsing when 'content-encoding: gzip' is present; the decompressed body MUST match expected_request_body byte-for-byte after format validation. If the SDK sends 'Content-Encoding: gzip' but the bytes fail to gunzip, the fixture MUST fail."
   }
 ]

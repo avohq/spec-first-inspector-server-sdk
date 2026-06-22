@@ -12,6 +12,7 @@ and correctly handles `streamId` edge cases.
 | `wire-3` | Non-200 response — SDK resolves (does not reject) |
 | `wire-4` | `streamId` with colons — verbatim passthrough as `anonymousId` (spec Edge Case 9) |
 | `wire-5` | Empty `streamId` — `anonymousId` becomes `""` (spec Edge Case 10) |
+| `wire-6` | Large body (≥ 1024 bytes) — gzip compression (SPEC.md §7.3.7), if applied, is valid and transparent |
 
 ## How It Works
 
@@ -29,6 +30,10 @@ instead of `https://api.avo.app`. The mock server:
 
 After the harness exits, the suite runner calls `GET /requests` and compares the captured request bodies
 against `expected_request_body` in the fixture.
+
+When a recorded request carries `Content-Encoding: gzip` (SPEC.md §7.3.7), the mock server MUST gunzip the
+raw body bytes before parsing the JSON, so the captured `body` is always the decompressed event array. A
+`gzip`-labeled body that fails to gunzip is a conformance failure.
 
 **Example:**
 
@@ -113,7 +118,7 @@ See [`conformance/runner-contract.md`](../runner-contract.md) for the full harne
 
 ## Conformance Definition
 
-An SDK **passes** the wire-protocol suite when all 5 fixtures pass:
+An SDK **passes** the wire-protocol suite when all 6 fixtures pass:
 
 - `wire-1`: The harness exits with code `0` and the mock server recorded exactly 1 request matching the
   expected body (with format validation applied to placeholder fields).
@@ -122,3 +127,6 @@ An SDK **passes** the wire-protocol suite when all 5 fixtures pass:
 - `wire-4`: The harness exits with code `0` and the mock server recorded a request with `anonymousId`
   equal to `"stream:with:colons"` exactly.
 - `wire-5`: The harness exits with code `0` and the mock server recorded a request with `anonymousId` equal to `""` exactly.
+- `wire-6`: The harness exits with code `0` and the mock server recorded exactly 1 request whose body
+  (gunzipped first when `Content-Encoding: gzip` is present) matches the expected body. The fixture passes
+  whether or not the body is compressed; a `gzip`-labeled body that fails to gunzip is a failure.

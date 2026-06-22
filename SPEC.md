@@ -411,10 +411,17 @@ calls to that URL instead of `https://api.avo.app`. This is used by the conforma
 |---|---|
 | `Content-Type` | `application/json` |
 | `Accept` | `application/json` |
-| `Content-Length` | Byte length of the serialized JSON body |
+| `Content-Length` | Byte length of the request body actually sent (compressed length when `Content-Encoding: gzip` is present, otherwise the byte length of the serialized JSON) |
+| `Content-Encoding` | `gzip` — present ONLY when the body is gzip-compressed (see Section 7.3.7). MUST be absent for uncompressed bodies. |
 
 There is no `Authorization` header. Authentication is carried inside the JSON body via the
 `apiKey` field. See Section 14 (Open Questions) for the auth discussion.
+
+> **`Content-Type` stays `application/json` for server SDKs.** The browser SDK sends
+> compressed bodies with `Content-Type: text/plain` to avoid a CORS preflight (`OPTIONS`)
+> round-trip. Server-side SDKs are not subject to CORS and MUST keep `Content-Type:
+> application/json` whether or not the body is compressed; the Inspector backend
+> distinguishes compressed bodies by the `Content-Encoding` header alone.
 
 ### 7.3 Request Body
 
@@ -537,6 +544,43 @@ is active (not sent to the server).
 
 The `publicEncryptionKey` field MUST be included in the base body only when a non-empty key
 was provided at constructor time.
+
+#### 7.3.7 Request Body Compression (gzip)
+
+To reduce egress, SDKs SHOULD gzip-compress the serialized request body before sending it.
+Compression is a transport optimization and is OPTIONAL: an SDK that always sends uncompressed
+bodies remains fully conformant. The Inspector backend accepts both compressed and uncompressed
+request bodies on the same endpoint.
+
+**Compression threshold.** Compression SHOULD be applied only when the serialized JSON body is at
+least **1024 bytes** (UTF-8 encoded). Bodies smaller than 1024 bytes SHOULD be sent uncompressed —
+for small payloads the gzip framing overhead outweighs the savings. The comparison is on UTF-8
+**byte length** (`>= 1024`), not character count. (The browser SDK compares JavaScript string
+`.length`; server SDKs MUST use byte length, which is the same value already reported in
+`Content-Length`.)
+
+**Algorithm.** When compression is applied, the body MUST be compressed with gzip (RFC 1952 — the
+gzip wrapper around DEFLATE, not raw zlib/RFC 1950 and not raw DEFLATE/RFC 1951). Every
+server-side language provides this in its standard library (e.g., Go `compress/gzip`, Python
+`gzip`, Ruby `Zlib::GzipWriter`, Node.js `zlib.gzipSync`, Java `GZIPOutputStream`,
+Rust `flate2`).
+
+**Headers when compressed.** A compressed request MUST set `Content-Encoding: gzip` and MUST set
+`Content-Length` to the byte length of the compressed body. `Content-Type` MUST remain
+`application/json` (see the note in Section 7.2). A request that is NOT compressed MUST NOT send a
+`Content-Encoding` header.
+
+**Mandatory fallback to uncompressed.** SDKs MUST fall back to sending the original, uncompressed
+body (and MUST NOT set `Content-Encoding`) in any of these cases:
+
+- a gzip implementation is unavailable on the runtime, or
+- compression raises/returns an error for the given body, or
+- the body is below the 1024-byte threshold.
+
+Compression MUST NOT change the logical request: the bytes the server obtains after gunzip MUST be
+byte-identical to the JSON body that would have been sent uncompressed. Compression MUST NOT alter
+any other observable behavior — the 10-second timeout, error taxonomy (Section 7.5), and promise
+outcomes are identical for compressed and uncompressed requests.
 
 ### 7.4 Response
 

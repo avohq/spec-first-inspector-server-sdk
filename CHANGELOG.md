@@ -45,7 +45,7 @@ appears.
 | `schemas/event-property-encrypted.json` | JSON Schema: encrypted property object |
 | `schemas/schema-entry.json` | JSON Schema: schema extraction entry |
 | `conformance/schema-extraction/fixtures.json` | 13 golden schema-extraction fixtures |
-| `conformance/wire-protocol/fixtures.json` | 5 wire-protocol golden fixtures (wire-1 through wire-5) |
+| `conformance/wire-protocol/fixtures.json` | 6 wire-protocol golden fixtures (wire-1 through wire-6) |
 | `conformance/error-handling/fixtures.json` | 3 error-handling fixtures (network timeout, network error, non-200) |
 | `conformance/deduplication/fixtures.json` | 2 deduplication fixtures (OPTIONAL — conformance grade not blocked) |
 | `conformance/runner-contract.md` | Normative stdin/stdout harness protocol |
@@ -73,6 +73,15 @@ appears.
   with exact error message strings
 - **`enableLogging` scope:** process-wide (class-level), not per-instance
 - **`destroy()` contract:** resets `pendingCount` to 0, clears keepalive timer
+- **gzip request compression (OPTIONAL):** SDKs SHOULD gzip-compress (RFC 1952)
+  request bodies whose serialized UTF-8 byte length is `>= 1024`, sending
+  `Content-Encoding: gzip` with the compressed `Content-Length`. `Content-Type`
+  stays `application/json` (the browser SDK uses `text/plain` to avoid a CORS
+  preflight; server SDKs are not subject to CORS). SDKs MUST fall back to an
+  uncompressed body when below the threshold, when no gzip implementation is
+  available, or on a compression error. Ported from the JS Inspector SDK
+  ([avohq/js-avo-inspector#212](https://github.com/avohq/js-avo-inspector/pull/212)),
+  adapted for server-side runtimes. See SPEC.md §7.2 and §7.3.7; `wire-6` fixture.
 
 ### New Requirements vs. Node.js Reference SDK
 

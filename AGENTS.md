@@ -36,7 +36,7 @@ Read every file in this order before writing any code. Do not skip files.
 6. **`conformance/schema-extraction/fixtures.json`** — 13 golden schema-extraction fixtures.
    Your `extractSchema` implementation MUST produce the exact `expected` output for each `input`.
 7. **`conformance/wire-protocol/fixtures.json`** — Wire-protocol golden fixtures (wire-1 through
-   wire-5). Your `trackSchemaFromEvent` implementation MUST pass all of these.
+   wire-6). Your `trackSchemaFromEvent` implementation MUST pass all of these.
 8. **`conformance/error-handling/fixtures.json`** — Error-handling fixtures. Your implementation
    MUST pass all of these (REQUIRED suite).
 9. **`conformance/deduplication/fixtures.json`** — Deduplication fixtures (OPTIONAL suite).
@@ -105,6 +105,10 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   (e.g., `"2026-05-25T12:00:00.000Z"`). The `.000Z` suffix MUST be present (SPEC.md §7.3.1).
 - [ ] The dedup key formula is `streamId + "\0" + eventName` (null-byte separator).
   When `streamId` is absent or empty, the key prefix is `""` (SPEC.md §11.3).
+- [ ] Request bodies ≥ 1024 bytes (UTF-8) SHOULD be gzip-compressed (RFC 1952) with
+  `Content-Encoding: gzip` and `Content-Length` set to the compressed length; `Content-Type`
+  stays `application/json`. Smaller bodies, or any runtime without gzip / on a compression error,
+  MUST fall back to an uncompressed body with no `Content-Encoding` header (SPEC.md §7.3.7).
 
 ### Error Handling and Resilience
 
@@ -176,7 +180,7 @@ variable is set.
 An SDK is conformant when:
 
 - All 13 `schema-extraction` suite fixtures pass.
-- All 5 `wire-protocol` suite fixtures pass.
+- All 6 `wire-protocol` suite fixtures pass.
 - All `error-handling` suite fixtures pass.
 - `deduplication` fixtures are OPTIONAL (SHOULD pass; they do not block a conformance grade).
 
