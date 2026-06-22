@@ -12,7 +12,7 @@ and correctly handles `streamId` edge cases.
 | `wire-3` | Non-200 response — SDK resolves (does not reject) |
 | `wire-4` | `streamId` with colons — verbatim passthrough as `anonymousId` (spec Edge Case 9) |
 | `wire-5` | Empty `streamId` — `anonymousId` becomes `""` (spec Edge Case 10) |
-| `wire-6` | Large body (≥ 1024 bytes) — gzip compression (SPEC.md §7.3.7), if applied, is valid and transparent |
+| `wire-6` | Large body (≥ 1024 bytes) — MUST be gzip-compressed on any gzip-capable runtime (SPEC.md §7.3.7); transparent after gunzip |
 | `wire-7` | Small body (< 1024 bytes) — MUST be sent uncompressed (no `Content-Encoding` header) |
 
 ## How It Works
@@ -130,8 +130,9 @@ An SDK **passes** the wire-protocol suite when all 7 fixtures pass:
 - `wire-4`: The harness exits with code `0` and the mock server recorded a request with `anonymousId`
   equal to `"stream:with:colons"` exactly.
 - `wire-5`: The harness exits with code `0` and the mock server recorded a request with `anonymousId` equal to `""` exactly.
-- `wire-6`: The harness exits with code `0` and the mock server recorded exactly 1 request whose body
-  (gunzipped first when `Content-Encoding: gzip` is present) matches the expected body. The fixture passes
-  whether or not the body is compressed; a `gzip`-labeled body that fails to gunzip is a failure.
+- `wire-6`: The harness exits with code `0` and the mock server recorded exactly 1 request carrying
+  `Content-Encoding: gzip` whose gunzipped body matches the expected body. A `gzip`-labeled body that fails
+  to gunzip is a failure. (An SDK on a runtime with no gzip implementation is exempt from the header
+  assertion per SPEC.md §7.3.7 and MUST document the limitation; it must still send a correct uncompressed body.)
 - `wire-7`: The harness exits with code `0` and the mock server recorded exactly 1 request with **no**
   `Content-Encoding` header (the body is below the 1024-byte gzip threshold, so it MUST be sent uncompressed).

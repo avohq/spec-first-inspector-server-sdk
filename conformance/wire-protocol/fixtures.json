@@ -192,8 +192,9 @@
         "eventHash": null
       }
     ],
+    "expected_request_headers": { "content-encoding": "gzip" },
     "expected_promise_outcome": "resolve",
-    "notes": "The serialized body exceeds the 1024-byte gzip threshold (SPEC.md §7.3.7), so a conformant SDK SHOULD send it with 'Content-Encoding: gzip'. Compression is OPTIONAL: this fixture passes whether the body is sent compressed or uncompressed. The mock server MUST gunzip the body before parsing when 'content-encoding: gzip' is present; the decompressed body MUST match expected_request_body byte-for-byte after format validation. If the SDK sends 'Content-Encoding: gzip' but the bytes fail to gunzip, the fixture MUST fail."
+    "notes": "The serialized body exceeds the 1024-byte gzip threshold (SPEC.md §7.3.7). On any gzip-capable runtime — which every conformance harness is — the SDK MUST send it with 'Content-Encoding: gzip'; this fixture asserts that header. The mock server MUST gunzip the body before parsing; the decompressed body MUST match expected_request_body byte-for-byte after format validation, and a 'gzip'-labeled body that fails to gunzip MUST fail the fixture. EXEMPTION: an SDK targeting a runtime with no gzip implementation is exempt from the content-encoding assertion (it must still send a correct uncompressed body) and MUST document the limitation in its README."
   },
   {
     "fixture_id": "wire-7",

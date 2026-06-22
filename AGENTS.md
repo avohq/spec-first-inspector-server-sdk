@@ -105,10 +105,12 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   (e.g., `"2026-05-25T12:00:00.000Z"`). The `.000Z` suffix MUST be present (SPEC.md §7.3.1).
 - [ ] The dedup key formula is `streamId + "\0" + eventName` (null-byte separator).
   When `streamId` is absent or empty, the key prefix is `""` (SPEC.md §11.3).
-- [ ] Request bodies ≥ 1024 bytes (UTF-8) SHOULD be gzip-compressed (RFC 1952) with
-  `Content-Encoding: gzip` and `Content-Length` set to the compressed length; `Content-Type`
-  stays `application/json`. Smaller bodies, or any runtime without gzip / on a compression error,
-  MUST fall back to an uncompressed body with no `Content-Encoding` header (SPEC.md §7.3.7).
+- [ ] Request bodies ≥ 1024 bytes (UTF-8) MUST be gzip-compressed (RFC 1952) whenever a gzip
+  implementation is available, with `Content-Encoding: gzip` and `Content-Length` set to the
+  compressed length; `Content-Type` stays `application/json`. Fall back to an uncompressed body
+  (no `Content-Encoding` header) ONLY for sub-1024-byte bodies, a runtime with no gzip, or a
+  compression error — not by choice (SPEC.md §7.3.7). A no-gzip runtime MUST document the
+  limitation in the README.
 
 ### Error Handling and Resilience
 

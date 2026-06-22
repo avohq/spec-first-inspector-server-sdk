@@ -395,10 +395,15 @@ are matched case-insensitively). Each value is one of:
 | `null` | The header MUST be **absent** from the request. |
 
 This is how a fixture asserts that a small body carries **no** `Content-Encoding`
-(`{ "content-encoding": null }`), or that a specific header value was sent. Because gzip
-compression is OPTIONAL (SPEC.md §7.3.7), a fixture for a large body MUST NOT assert
-`content-encoding: "gzip"` as a literal — doing so would fail a conformant SDK that opts out of
-compression. Use `expected_request_headers` only for headers whose presence/absence is
+(`{ "content-encoding": null }`), or that a large body was compressed
+(`{ "content-encoding": "gzip" }`).
+
+Compression is mandatory when feasible (SPEC.md §7.3.7): on a gzip-capable runtime an SDK MUST
+compress every `>= 1024`-byte body. Every conformance harness runs on such a runtime, so the
+large-body fixture (`wire-6`) asserts `content-encoding: "gzip"`. The only conformant exception is
+an SDK that targets a runtime with no gzip implementation at all; such an SDK is exempt from the
+`wire-6` header assertion (it must still send a correct uncompressed body) and MUST document the
+limitation in its README. Use `expected_request_headers` only for headers whose presence/absence is
 normatively required for the given fixture.
 
 ### `mock_response` field

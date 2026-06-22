@@ -73,13 +73,14 @@ appears.
   with exact error message strings
 - **`enableLogging` scope:** process-wide (class-level), not per-instance
 - **`destroy()` contract:** resets `pendingCount` to 0, clears keepalive timer
-- **gzip request compression (OPTIONAL):** SDKs SHOULD gzip-compress (RFC 1952)
-  request bodies whose serialized UTF-8 byte length is `>= 1024`, sending
-  `Content-Encoding: gzip` with the compressed `Content-Length`. `Content-Type`
-  stays `application/json` (the browser SDK uses `text/plain` to avoid a CORS
-  preflight; server SDKs are not subject to CORS). SDKs MUST fall back to an
-  uncompressed body when below the threshold, when no gzip implementation is
-  available, or on a compression error. Ported from the JS Inspector SDK
+- **gzip request compression (mandatory when feasible):** On any gzip-capable
+  runtime, SDKs MUST gzip-compress (RFC 1952) request bodies whose serialized
+  UTF-8 byte length is `>= 1024`, sending `Content-Encoding: gzip` with the
+  compressed `Content-Length`. `Content-Type` stays `application/json` (the
+  browser SDK uses `text/plain` to avoid a CORS preflight; server SDKs are not
+  subject to CORS). Uncompressed fallback is permitted ONLY for sub-threshold
+  bodies, a runtime with no gzip implementation, or a compression error — not by
+  choice; a no-gzip runtime MUST document the limitation. Ported from the JS Inspector SDK
   ([avohq/js-avo-inspector#212](https://github.com/avohq/js-avo-inspector/pull/212)),
   adapted for server-side runtimes. See SPEC.md §7.2 and §7.3.7; conformance
   fixtures `wire-6` (large body, gzip transparent) and `wire-7` (small body MUST

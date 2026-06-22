@@ -547,17 +547,21 @@ was provided at constructor time.
 
 #### 7.3.7 Request Body Compression (gzip)
 
-To reduce egress, SDKs SHOULD gzip-compress the serialized request body before sending it.
-Compression is a transport optimization and is OPTIONAL: an SDK that always sends uncompressed
-bodies remains fully conformant. The Inspector backend accepts both compressed and uncompressed
-request bodies on the same endpoint.
+To reduce egress, SDKs gzip-compress the serialized request body before sending it. The Inspector
+backend accepts both compressed and uncompressed request bodies on the same endpoint.
 
-**Compression threshold.** Compression SHOULD be applied only when the serialized JSON body is at
-least **1024 bytes** (UTF-8 encoded). Bodies smaller than 1024 bytes SHOULD be sent uncompressed —
-for small payloads the gzip framing overhead outweighs the savings. The comparison is on UTF-8
-**byte length** (`>= 1024`), not character count. (The browser SDK compares JavaScript string
-`.length`; server SDKs MUST use byte length, which is the same value already reported in
-`Content-Length`.)
+**Compression is mandatory when feasible.** When a gzip implementation is available on the runtime,
+an SDK MUST gzip-compress every request body whose serialized size is at least **1024 bytes**
+(UTF-8 encoded). Compression is OPTIONAL only where it is not feasible — the SDK falls back to an
+uncompressed body in exactly the cases listed under *Fallback to uncompressed* below (no gzip
+implementation, a compression error, or a sub-threshold body). An SDK that simply chooses not to
+compress a large body on a gzip-capable runtime is **not** conformant.
+
+**Compression threshold.** Compression applies only when the serialized JSON body is at least
+**1024 bytes** (UTF-8 encoded). Bodies smaller than 1024 bytes MUST be sent uncompressed — for
+small payloads the gzip framing overhead outweighs the savings. The comparison is on UTF-8 **byte
+length** (`>= 1024`), not character count. (The browser SDK compares JavaScript string `.length`;
+server SDKs MUST use byte length, which is the same value already reported in `Content-Length`.)
 
 **Algorithm.** When compression is applied, the body MUST be compressed with gzip (RFC 1952 — the
 gzip wrapper around DEFLATE, not raw zlib/RFC 1950 and not raw DEFLATE/RFC 1951). Every
@@ -570,12 +574,16 @@ Rust `flate2`).
 `application/json` (see the note in Section 7.2). A request that is NOT compressed MUST NOT send a
 `Content-Encoding` header.
 
-**Mandatory fallback to uncompressed.** SDKs MUST fall back to sending the original, uncompressed
-body (and MUST NOT set `Content-Encoding`) in any of these cases:
+**Fallback to uncompressed.** SDKs MUST fall back to sending the original, uncompressed body (and
+MUST NOT set `Content-Encoding`) in — and only in — these cases:
 
 - a gzip implementation is unavailable on the runtime, or
 - compression raises/returns an error for the given body, or
 - the body is below the 1024-byte threshold.
+
+These are the only conditions under which a `>= 1024`-byte body may be sent uncompressed. An SDK
+that targets a runtime with no gzip implementation MUST document this limitation in its README (it
+is exempt from the `wire-6` conformance assertion but MUST still send a correct uncompressed body).
 
 Compression MUST NOT change the logical request: the bytes the server obtains after gunzip MUST be
 byte-identical to the JSON body that would have been sent uncompressed. Compression MUST NOT alter
