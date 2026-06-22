@@ -5,6 +5,3 @@ config:
     code_blocks: false
     code_spans: false
   MD060: false
-ignores:
-  - "fester/**"
-  - "planning/**"
