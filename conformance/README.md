@@ -13,7 +13,7 @@ conformance/
     fixtures.json                  (13 golden fixtures)
   wire-protocol/
     README.md                      (wire protocol suite docs)
-    fixtures.json                  (5 golden fixtures: wire-1 through wire-5)
+    fixtures.json                  (7 golden fixtures: wire-1 through wire-7)
   deduplication/
     README.md                      (deduplication suite docs)
     fixtures.json                  (deduplication fixtures — OPTIONAL suite)
@@ -41,7 +41,7 @@ and non-200 response handling. Requires `AVO_INSPECTOR_MOCK_ENDPOINT` to be set 
 invoking the harness.
 
 See `wire-protocol/README.md` for details and `wire-protocol/fixtures.json` for the
-machine-readable fixtures (wire-1 through wire-5).
+machine-readable fixtures (wire-1 through wire-7).
 
 ### deduplication
 

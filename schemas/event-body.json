@@ -105,5 +105,19 @@
       "description": "Avo Codegen event hash. Must be null when avoFunction is false."
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "avoFunction": { "const": false } },
+        "required": ["avoFunction"]
+      },
+      "then": {
+        "properties": {
+          "eventId": { "type": "null" },
+          "eventHash": { "type": "null" }
+        }
+      }
+    }
+  ],
   "additionalProperties": false
 }

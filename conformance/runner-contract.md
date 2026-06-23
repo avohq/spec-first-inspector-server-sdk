@@ -104,15 +104,17 @@ The input envelope is a JSON object with the following fields.
 
 ### `operation` values and `input` shapes
 
-**`"extractSchema"`** — calls `inspector.extractSchema(eventProperties)`:
+**`"extractSchema"`** — for the `schema-extraction` suite the harness calls
+`inspector.extractSchema(input)`, where the entire `input` field IS the `eventProperties`
+argument (no wrapper object). Consistent with steps 3 and the `input` row above:
 
 ```json
 {
-  "eventProperties": { "key": "value" }
+  "key": "value"
 }
 ```
 
-`eventProperties` MAY be `null` (fixture-8). The harness MUST pass `null` through to the SDK.
+`input` MAY be `null` (fixture-8). The harness MUST pass `null` through to the SDK.
 
 **`"trackSchemaFromEvent"`** — calls `inspector.trackSchemaFromEvent(eventName, eventProperties, streamId?)`:
 
@@ -246,7 +248,7 @@ The harness MUST write exactly one JSON object to stdout, terminated by a newlin
 | Code | Meaning |
 |---|---|
 | `0` | Pass — the harness executed the operation and wrote the output envelope successfully. The fixture assertion result is determined by the suite runner, not the exit code. |
-| `1` | Fail — the operation produced a result that the harness determined was wrong, OR the promise was rejected when a resolve was expected (or vice versa). Harnesses MAY use exit code `1` for assertion failures when they perform inline checking; otherwise exit `0` and let the suite runner assert. |
+| `1` | Harness/runtime invocation failure — after the input envelope was parsed, the harness could not produce a normal output envelope for the operation (for example, an unhandled runtime error). Fixture assertions remain the suite runner's responsibility; the harness MUST NOT use exit code `1` to signal an assertion result. |
 | `2` | Harness configuration error — the input envelope was malformed, a required field was missing, the `operation` value is unsupported, or the `precondition` field could not be applied. This exit code signals a problem with the fixture or harness setup, not the SDK under test. |
 
 The suite runner treats any exit code other than `0` or `1` as an unexpected error and marks
@@ -302,8 +304,8 @@ failure regardless of the regex rule.
 
 | Placeholder | Field | Validation regex / rule |
 |---|---|---|
-| `"<uuid-v4>"` | `messageId` | `/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i` |
-| `"<iso8601>"` | `createdAt` | `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/` — millisecond suffix (`.000Z`) MUST be present. |
+| `"<uuid-v4>"` | `messageId` | `/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/` — lowercase hex only (no `/i` flag); SPEC.md §8.1 requires lowercase. |
+| `"<iso8601>"` | `createdAt` | `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/` — a 3-digit millisecond suffix (e.g. `.000Z`) MUST be present; the value of those digits is not constrained. |
 | `"<semver>"` | `libVersion` | `/^\d+\.\d+\.\d+$/` — plain SemVer, no suffix (e.g., `"1.2.0"`, not `"1.2.0+spec"`). |
 | `"<sdk-platform>"` | `libPlatform` | Any non-empty string identifying the SDK language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). Suite runner accepts any non-empty value. |
 
@@ -443,8 +445,8 @@ submitting conformance results.
 - [ ] Harness passes `null` event properties through to `extractSchema` unchanged (fixture-8).
 - [ ] Harness honors `AVO_INSPECTOR_MOCK_ENDPOINT` — the SDK under test sends HTTP calls to
       the mock server URL when this variable is set.
-- [ ] Harness exits with code `0` on success, `1` on assertion failure, and `2` on
-      configuration/envelope errors.
+- [ ] Harness exits with code `0` on success, `1` on a harness/runtime invocation failure
+      (never to signal an assertion result), and `2` on configuration/envelope errors.
 - [ ] Harness handles all three `operation` values: `"extractSchema"`,
       `"trackSchemaFromEvent"`, and `"_avoFunctionTrackSchemaFromEvent"`.
 - [ ] Harness does not persist state between invocations — each run constructs a fresh

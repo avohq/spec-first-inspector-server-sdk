@@ -39,19 +39,22 @@ paths:
         The SDK MUST apply a 10-second timeout to every call.
         On 200, the SDK MUST update its internal samplingRate from the response body.
 
-        The request body MAY be gzip-compressed (RFC 1952). SDKs SHOULD compress bodies whose
-        serialized UTF-8 byte length is >= 1024 bytes and MUST then send `Content-Encoding: gzip`
-        with `Content-Length` set to the compressed length. `Content-Type` remains
-        `application/json` for server SDKs regardless of compression. Compression is OPTIONAL;
-        the backend accepts both compressed and uncompressed bodies. See SPEC.md §7.3.7.
+        The request body MUST be gzip-compressed (RFC 1952) when a gzip implementation is
+        available on the runtime and the serialized UTF-8 byte length is >= 1024 bytes; the SDK
+        MUST then send `Content-Encoding: gzip` with `Content-Length` set to the compressed
+        length. `Content-Type` remains `application/json` for server SDKs regardless of
+        compression. Falling back to an uncompressed body is allowed only when the body is
+        < 1024 bytes, no gzip implementation is available, or compression fails; the backend
+        accepts both compressed and uncompressed bodies. See SPEC.md §7.3.7.
       parameters:
         - name: Content-Encoding
           in: header
           required: false
           description: |
             Set to `gzip` when the request body is gzip-compressed (RFC 1952). Omit entirely for
-            uncompressed bodies. SDKs SHOULD compress bodies >= 1024 bytes and MUST fall back to an
-            uncompressed body (with this header absent) when gzip is unavailable or fails.
+            uncompressed bodies. SDKs MUST compress bodies >= 1024 bytes when gzip is available and
+            MUST fall back to an uncompressed body (with this header absent) only when the body is
+            < 1024 bytes, gzip is unavailable, or compression fails.
           schema:
             type: string
             enum: ["gzip"]
@@ -140,6 +143,11 @@ components:
         A single event object in the Inspector v1 track request body (plain, no encryption).
         type must be 'event'. See schemas/event-body.json for the JSON Schema definition.
       type: object
+      # SPEC.md §7.3.1: trackingId and sessionId MUST NOT be sent in v1.
+      not:
+        anyOf:
+          - required: [sessionId]
+          - required: [trackingId]
       required:
         - apiKey
         - appName

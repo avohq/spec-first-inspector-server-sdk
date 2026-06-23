@@ -56,5 +56,29 @@
       }
     }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "propertyType": {
+            "enum": ["object", "list(string)", "list(int)", "list(float)", "list(boolean)", "list(object)", "list(null)"]
+          }
+        },
+        "required": ["propertyType"]
+      },
+      "then": { "required": ["children"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "propertyType": {
+            "enum": ["string", "int", "float", "boolean", "null", "unknown"]
+          }
+        },
+        "required": ["propertyType"]
+      },
+      "then": { "not": { "required": ["children"] } }
+    }
+  ],
   "additionalProperties": false
 }

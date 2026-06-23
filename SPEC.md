@@ -667,7 +667,7 @@ logging facility.
 - Pattern: `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`
   - `4` in position 13 is literal (UUID version 4 marker).
   - `y` in position 17 MUST be one of `8`, `9`, `a`, `b` (RFC 4122 variant bits).
-- Validation regex: `/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i`
+- Validation regex: `/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/` (lowercase hex only — no `/i` flag).
 - MUST be unique per event object. MUST be generated fresh for each event body.
 - Implementations MAY use a cryptographic UUID v4 library. The format MUST match; the entropy
   source MAY differ.
@@ -1403,7 +1403,7 @@ MUST validate these fields by format:
 
 | Field | Format | Validation regex or rule |
 |---|---|---|
-| `messageId` | UUID v4, lowercase hex | `/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i` |
+| `messageId` | UUID v4, lowercase hex | `/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/` |
 | `createdAt` | ISO 8601 UTC with milliseconds | `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/` |
 | `libVersion` | Plain SemVer string | `/^\d+\.\d+\.\d+$/` |
 | `libPlatform` | Non-empty string | Any non-empty string; suite runner accepts any |

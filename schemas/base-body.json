@@ -68,6 +68,7 @@
     },
     "publicEncryptionKey": {
       "type": "string",
+      "pattern": "^(?:[0-9a-fA-F]{66}|[0-9a-fA-F]{130})$",
       "description": "P-256 public key in hex (compressed 66 chars or uncompressed 130 chars). Present only when provided at constructor time."
     }
   },
