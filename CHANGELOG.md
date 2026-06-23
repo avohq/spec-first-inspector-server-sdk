@@ -34,7 +34,7 @@ appears.
 
 | Artifact | Description |
 |---|---|
-| `SPEC.md` | Full normative prose specification (RFC 2119 language, 15 sections) |
+| `SPEC.md` | Full normative prose specification (RFC 2119 language, 13 sections) |
 | `AGENTS.md` | AI-agent SDK generation guide: checklist, reading order, conformance, definition of done (19 ACs) |
 | `openapi.yaml` | OpenAPI 3.1 document for the Inspector HTTP API |
 | `schemas/base-body.json` | JSON Schema: base request body fields |
@@ -46,7 +46,7 @@ appears.
 | `schemas/schema-entry.json` | JSON Schema: schema extraction entry |
 | `conformance/schema-extraction/fixtures.json` | 13 golden schema-extraction fixtures |
 | `conformance/wire-protocol/fixtures.json` | 7 wire-protocol golden fixtures (wire-1 through wire-7) |
-| `conformance/error-handling/fixtures.json` | 3 error-handling fixtures (network timeout, network error, non-200) |
+| `conformance/error-handling/fixtures.json` | 3 error-handling fixtures (samplingRate boundary, non-200, empty properties) |
 | `conformance/runner-contract.md` | Normative stdin/stdout harness protocol |
 
 ### Wire-Protocol Normative Content

@@ -133,11 +133,11 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 
 ### Lifecycle
 
-- [ ] `destroy()` is implemented and after `destroy()`, `trackSchemaFromEvent()` is a no-op
-  (returns `Promise.resolve([])`). `pendingCount` MUST be `0` and the keepalive timer MUST be
-  cleared after `destroy()`. Constructor options (`apiKey`, `env`, `version`, `appName`,
-  `samplingRate`) and the process-wide `shouldLog` flag MUST NOT be reset (SPEC.md §4.5,
-  AC-19).
+- [ ] `destroy()` is implemented and after `destroy()`, `trackSchemaFromEvent()` MUST be a no-op
+  (MUST return `Promise.resolve([])` and MUST NOT send an HTTP request). `pendingCount` MUST be
+  `0` and the keepalive timer MUST be cleared after `destroy()`. Constructor options (`apiKey`,
+  `env`, `version`, `appName`, `samplingRate`) and the process-wide `shouldLog` flag MUST NOT be
+  reset (SPEC.md §4.5, AC-19).
 
 ---
 
@@ -280,5 +280,6 @@ the SDK README as required before process/function exit.
 
 After `destroy()`, `pendingCount` is `0` and the keepalive timer is cleared. `apiKey`, `env`,
 `version`, `appName`, `samplingRate`, and the process-wide `shouldLog` flag are NOT reset.
+A subsequent `trackSchemaFromEvent()` MUST return `Promise.resolve([])` and MUST NOT send.
 `destroy()` is distinct from `flush()`: it cancels and cleans up; it does not wait for
 in-flight requests.

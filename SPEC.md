@@ -99,7 +99,6 @@ server-side-only requirements; browser/client-side concerns are out of scope.
   (non-Node) or `await` the promise returned by `trackSchemaFromEvent` before process exit,
   if events may be in-flight.
 
-
 ---
 
 ## 4. Public API Surface
@@ -251,9 +250,10 @@ Cleans up all resources. After `destroy()` is called, state MUST be as follows:
 NOT flush pending requests. Callers who need delivery guarantees MUST await the
 `trackSchemaFromEvent` promise before calling `destroy()`, or use `flush()` (non-Node.js).
 
-After `destroy()`, the instance SHOULD NOT be reused. Implementations MAY allow reuse (a
-subsequent `trackSchemaFromEvent` call will re-create the keepalive timer if needed), but MUST
-document this behavior.
+After `destroy()`, the instance MUST be treated as terminated. A subsequent
+`trackSchemaFromEvent()` call MUST return `Promise.resolve([])` and MUST NOT send an HTTP request.
+(The field-state table above still applies: `pendingCount` is `0`, the keepalive timer is cleared,
+and the constructor options plus the process-wide `shouldLog` flag persist.)
 
 ---
 
@@ -461,13 +461,17 @@ OR any list type (including `"list(string)"`, `"list(int)"`, `"list(float)"`, `"
 
 **`children` data structure:** `children` is a JSON array where each element is one of:
 
-- A **type string** (`"string"`, `"int"`, `"float"`, `"boolean"`, `"null"`, `"unknown"`) — for
-  primitive elements within an array.
-- A **SchemaEntry array** (array of `{ propertyName, propertyType, children? }` objects) — for
-  object or nested-array elements within an array.
+- A **type string** (`"string"`, `"int"`, `"float"`, `"boolean"`, `"null"`, `"object"`,
+  `"unknown"`) — for primitive elements within an array.
+- A **SchemaEntry object** (`{ propertyName, propertyType, children? }`) — when `propertyType`
+  is `"object"`, the `children` array holds these directly, one per own property of the object.
+- A **(possibly nested) array** of the above — for nested-array elements within a list (e.g. a
+  list element that is itself an object maps to a SchemaEntry array; a list element that is itself
+  a list of primitives maps to an array of type strings such as `["string"]`).
 
-This is a heterogeneous union type. In statically-typed languages (Go, Rust, Java), implementations
-MUST use a union/sum type or interface/any type for `children` elements.
+This is a heterogeneous, recursive union type: element = type string | SchemaEntry object | array
+of (element). In statically-typed languages (Go, Rust, Java), implementations MUST use a union/sum
+type or interface/any type for `children` elements.
 
 #### 7.3.5 Property Object (Encrypted)
 
@@ -612,7 +616,8 @@ logging facility.
 - Pattern: `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`
   - `4` in position 13 is literal (UUID version 4 marker).
   - `y` in position 17 MUST be one of `8`, `9`, `a`, `b` (RFC 4122 variant bits).
-- Validation regex: `/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/` (lowercase hex only — no `/i` flag).
+- Validation regex (lowercase hex only — no `/i` flag):
+  `/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/`
 - MUST be unique per event object. MUST be generated fresh for each event body.
 - Implementations MAY use a cryptographic UUID v4 library. The format MUST match; the entropy
   source MAY differ.

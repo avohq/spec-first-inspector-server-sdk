@@ -30,30 +30,33 @@
       "description": "The classified type of the property value."
     },
     "children": {
-      "description": "Present when propertyType is 'object' or any list type. Each element is either a type string or a SchemaEntry array.",
+      "description": "Present when propertyType is 'object' or any list type. Each element is a primitive type string, a SchemaEntry object (object-typed children), or a (possibly nested) array of these.",
       "type": "array",
-      "items": {
-        "oneOf": [
-          {
-            "type": "string",
-            "enum": [
-              "string",
-              "int",
-              "float",
-              "boolean",
-              "null",
-              "object",
-              "unknown"
-            ]
-          },
-          {
-            "type": "array",
-            "items": {
-              "$ref": "#"
-            }
-          }
-        ]
-      }
+      "items": { "$ref": "#/$defs/childElement" }
+    }
+  },
+  "$defs": {
+    "childElement": {
+      "description": "One element of a children array: a primitive type string, a SchemaEntry object, or a (possibly nested) array of these. The three branches are disjoint by JSON type.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "string",
+            "int",
+            "float",
+            "boolean",
+            "null",
+            "object",
+            "unknown"
+          ]
+        },
+        { "$ref": "#" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/childElement" }
+        }
+      ]
     }
   },
   "allOf": [

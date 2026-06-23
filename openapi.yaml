@@ -252,21 +252,30 @@ components:
           type: array
           description: |
             Present when propertyType is 'object' or any list type. Absent for primitive
-            scalar types. Each element is either a type string or a SchemaEntry array.
+            scalar types. Each element is a primitive type string, a SchemaEntry object
+            (object-typed children), or a (possibly nested) array of these.
           items:
-            oneOf:
-              - type: string
-                enum:
-                  - string
-                  - int
-                  - float
-                  - boolean
-                  - "null"
-                  - object
-                  - unknown
-              - type: array
-                items:
-                  $ref: "#/components/schemas/EventPropertyPlain"
+            $ref: "#/components/schemas/SchemaChildElement"
+
+    SchemaChildElement:
+      description: |
+        One element of a children array: a primitive type string, a SchemaEntry
+        (EventPropertyPlain) object, or a (possibly nested) array of these. The three
+        branches are disjoint by JSON type (string / object / array).
+      oneOf:
+        - type: string
+          enum:
+            - string
+            - int
+            - float
+            - boolean
+            - "null"
+            - object
+            - unknown
+        - $ref: "#/components/schemas/EventPropertyPlain"
+        - type: array
+          items:
+            $ref: "#/components/schemas/SchemaChildElement"
 
     TrackResponse:
       description: Response body for a successful 200 track call.
