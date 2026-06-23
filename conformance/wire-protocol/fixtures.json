@@ -217,5 +217,20 @@
     "expected_request_headers": { "content-encoding": null },
     "expected_promise_outcome": "resolve",
     "notes": "The serialized body is well below the 1024-byte gzip threshold (SPEC.md §7.3.7). The SDK MUST send it uncompressed: the request MUST NOT carry a 'Content-Encoding' header. The suite runner asserts header absence via expected_request_headers: { content-encoding: null }."
+  },
+  {
+    "fixture_id": "wire-8",
+    "description": "Batching: with batchSize > 1, a single tracked event is buffered, not sent — zero HTTP calls before flush",
+    "constructor": { "apiKey": "test-key", "env": "staging", "version": "1.0.0", "appName": "TestApp", "batchSize": 30 },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "Buffered Event",
+      "eventProperties": { "plan": "pro" },
+      "streamId": "stream-batch"
+    },
+    "mock_response": null,
+    "expected_request_count": 0,
+    "expected_promise_outcome": "resolve",
+    "notes": "Batching is active because env is 'staging' (so batchSize is NOT forced to 1) and batchSize is 30. A single trackSchemaFromEvent enqueues one event, which is below the size threshold, so the SDK MUST NOT send an HTTP request before a flush — the suite runner verifies zero captured requests. The promise still resolves (with the extracted schema) at enqueue time (SPEC.md §4.2, §7.5.2, §13.3). The harness invocation completes well within batchFlushSeconds (30s), so no time-based flush occurs. This is the only batching behavior the single-invocation harness can assert automatically; flush()-drains, size/time flush, overflow, and re-queue are covered by the manual matrix in conformance/README.md."
   }
 ]

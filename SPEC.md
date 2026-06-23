@@ -24,7 +24,8 @@
 10. [Schema Extraction Golden Fixtures](#10-schema-extraction-golden-fixtures)
 11. [Encryption](#11-encryption)
 12. [Keepalive Timer and Flush](#12-keepalive-timer-and-flush)
-13. [Out of Scope](#13-out-of-scope)
+13. [Batching](#13-batching)
+14. [Out of Scope](#14-out-of-scope)
 
 ---
 
@@ -71,17 +72,28 @@ server-side-only requirements; browser/client-side concerns are out of scope.
 
 - Implementations MUST be safe to use in concurrent environments (multi-threaded servers, async
   runtimes, goroutines, Ractors, etc.).
-- Shared mutable state (sampling rate, logging flag) MUST be protected
+- Shared mutable state (sampling rate, logging flag, the pending batch buffer) MUST be protected
   by appropriate synchronization primitives (mutex, lock, atomic, etc.) in multi-threaded
   runtimes.
 - The `samplingRate` field MUST be updated using a lock or atomic primitive in Go, Python
   (threaded), Ruby (Ractors), and JVM languages. Last-write-wins is acceptable; strict ordering
   between concurrent responses is NOT required.
+- The pending batch buffer (see Section 13) is concurrently-accessed mutable state. Appending an
+  event and the flush "swap-and-clear" (move the buffer contents to a local variable, then reset
+  the shared buffer to empty) MUST be mutually atomic under a single lock: no event may be appended
+  between the moment a flush reads the buffer and the moment it clears it, and no two flushes may
+  dispatch the same buffered event. The HTTP send MUST be performed OUTSIDE the lock — an
+  implementation MUST NOT hold the buffer lock across the network call.
 
 ### 3.2 No Persistent Storage
 
 - Implementations MUST NOT write to disk or any persistent store (database, file system, etc.).
 - All state is in-memory only.
+- The pending batch buffer (see Section 13) is held in memory only and MUST NOT be persisted.
+  Consequently, events that have been enqueued but not yet sent are lost if the process crashes,
+  is killed, or exits without a successful `flush()`. The SDK provides **at-most-once** delivery for
+  buffered events and makes no durability guarantee; callers that require delivery MUST `flush()`
+  before exit (see Sections 4.6 and 13).
 
 ### 3.3 No sessionId or visitorId
 
@@ -97,7 +109,7 @@ server-side-only requirements; browser/client-side concerns are out of scope.
 - Non-Node.js SDKs MUST implement a `flush()` method (see Section 4.6 and Section 12).
 - The shutdown contract MUST be documented in the SDK README: callers MUST invoke `flush()`
   (non-Node) or `await` the promise returned by `trackSchemaFromEvent` before process exit,
-  if events may be in-flight.
+  if events may be in-flight or buffered in a pending batch (see Section 13).
 
 ---
 
@@ -116,6 +128,10 @@ new AvoInspector(options: {
   version: string;                   // REQUIRED
   appName?: string;                  // OPTIONAL, defaults to ""
   publicEncryptionKey?: string;      // OPTIONAL, see Section 11
+  batchSize?: number;                // OPTIONAL, default 30 (forced to 1 when env == "dev"), see Section 13
+  batchFlushSeconds?: number;        // OPTIONAL, default 30, see Section 13
+  maxQueueSize?: number;             // OPTIONAL, default 1000, see Section 13
+  disableBatchTimer?: boolean;       // OPTIONAL, default false, see Section 13
 })
 ```
 
@@ -151,18 +167,24 @@ trackSchemaFromEvent(
 
 **Semantics (in order of execution):**
 
-1. Calls `extractSchema(eventProperties)`, then sends the extracted schema to the Inspector API
-   (see Section 7).
-2. Returns a promise that resolves to the extracted schema array. On a non-200 HTTP response, the
-   promise still resolves but with `[]` regardless of whether `eventProperties` was non-empty (see
-   §7.5 error taxonomy). The fixture `error-2` (non-empty props + 400 → `[]`) is the source of
-   truth for this behavior.
-3. On any synchronous internal error (e.g., stream ID validation throwing): MUST log to
-   `console.error` (or language-equivalent) and MUST return
+1. Calls `extractSchema(eventProperties)` to compute the schema synchronously.
+2. Applies sampling per event (see Section 7.7): if the event is dropped by sampling, it MUST NOT
+   be enqueued and no network call is made.
+3. Otherwise, enqueues the event into the pending batch buffer and evaluates the flush triggers
+   (see Section 13). The batch is sent to the Inspector API (see Section 7) when a flush trigger
+   fires — which, when `env == "dev"` (where `batchSize` is forced to `1`), is immediately within
+   this call. When `batchSize > 1`, the actual send is deferred and MAY be triggered by a later
+   call, by the scheduled flush, or by `flush()`.
+4. Returns a promise that resolves with the extracted schema array **at enqueue time** — it MUST NOT
+   wait for the batch to be sent, and the resolved value MUST NOT reflect the eventual HTTP status of
+   the batch. (When `batchSize == 1` the send is synchronous to the call, so the per-call HTTP
+   outcomes in §7.5 are observable; see §7.5.2 for behavior under batching.)
+5. On any synchronous internal error before enqueue (e.g., stream ID validation throwing): MUST log
+   to `console.error` (or language-equivalent) and MUST return
    `Promise.reject("Avo Inspector: something went wrong. Please report to support@avo.app.")`.
    The rejection value MUST be this exact string, not the original error object or message.
-4. MUST keep the process alive (via keepalive timer in Node.js, or pending-count tracking for
-   `flush()` in non-Node.js) until the network call completes.
+6. MUST keep the process alive (via keepalive timer in Node.js, or pending-count tracking for
+   `flush()` in non-Node.js) until any network call initiated for the batch completes.
 
 **`streamId` rules:**
 
@@ -241,7 +263,9 @@ Cleans up all resources. After `destroy()` is called, state MUST be as follows:
 | Field | Post-`destroy()` value | Notes |
 |---|---|---|
 | `pendingCount` | `0` | Reset; in-flight network calls are abandoned |
+| `pendingBatch` | cleared / empty | Buffered-but-unsent events are discarded (abandoned, NOT sent) |
 | `keepAliveTimer` | `null` / cleared | Timer is cancelled |
+| scheduled-flush timer | `null` / cleared | Background batch-flush timer (if any, see Section 13) is cancelled |
 | `samplingRate` | persisted (NOT reset) | Value from last 200 response is retained |
 | `apiKey`, `env`, `version`, `appName` | persisted (NOT reset) | Constructor options retained |
 | `shouldLog` (process-wide) | persisted (NOT reset) | Process-wide flag is not affected |
@@ -251,9 +275,11 @@ NOT flush pending requests. Callers who need delivery guarantees MUST await the
 `trackSchemaFromEvent` promise before calling `destroy()`, or use `flush()` (non-Node.js).
 
 After `destroy()`, the instance MUST be treated as terminated. A subsequent
-`trackSchemaFromEvent()` call MUST return `Promise.resolve([])` and MUST NOT send an HTTP request.
-(The field-state table above still applies: `pendingCount` is `0`, the keepalive timer is cleared,
-and the constructor options plus the process-wide `shouldLog` flag persist.)
+`trackSchemaFromEvent()` call MUST return `Promise.resolve([])`, MUST NOT enqueue the event, and
+MUST NOT send an HTTP request. `destroy()` MUST discard the pending batch buffer without sending it
+(consistent with abandoning in-flight requests). (The field-state table above still applies:
+`pendingCount` is `0`, the keepalive and scheduled-flush timers are cleared, the pending batch is
+discarded, and the constructor options plus the process-wide `shouldLog` flag persist.)
 
 ---
 
@@ -268,7 +294,13 @@ flush(timeoutMs?: number): Promise<void>   // or synchronous equivalent
 
 **Semantics:**
 
-- Resolves (returns) once all pending sends initiated before the `flush()` call have either
+- `flush()` MUST first **force-flush the pending batch**: atomically swap out and dispatch all
+  currently-buffered events as a batch (subject to the size cap), then wait for all in-flight sends —
+  including the one it just initiated — to complete or be abandoned, before resolving. Force-flushing
+  the buffer is REQUIRED; a `flush()` that only awaits already-dispatched sends without draining the
+  buffer is non-conformant (it would silently leave buffered events unsent — see the serverless
+  requirement below).
+- Resolves (returns) once all pending sends initiated before (and by) the `flush()` call have either
   completed or been abandoned.
 - Default `timeoutMs`: **10,000 ms** (10 seconds). Callers MAY pass a custom timeout.
 - `flush()` MUST resolve (not reject) in all cases — even if one or more in-flight requests
@@ -298,6 +330,13 @@ be in-flight.
 | `version` | string | YES | — | Application version. Sent in the request body as `appVersion`. MUST be non-empty and non-whitespace. Comparable string (integer or semantic version). |
 | `appName` | string | NO | `""` | Application name. Sent in the request body as `appName`. |
 | `publicEncryptionKey` | string | NO | `undefined` (no encryption) | P-256 public key in hex (compressed 66 chars or uncompressed 130 chars). When present in dev/staging, property values are ECIES-encrypted before sending. In prod, this option is accepted but encryption is NOT applied. |
+| `batchSize` | integer | NO | `30` | Flush the pending batch when its length reaches `batchSize`. **Forced to `1` when `env == "dev"`** (immediate send), overriding any configured value. MUST be ≥ 1; values < 1 fall back to the default with a console warning. See Section 13. |
+| `batchFlushSeconds` | number | NO | `30` | Maximum age (seconds) of the oldest buffered event before a time/idle flush SHOULD occur. MUST be > 0; invalid values fall back to the default with a console warning. See Section 13. |
+| `maxQueueSize` | integer | NO | `1000` | Hard cap on buffered events; on overflow the oldest events are dropped first (FIFO). See Section 13. |
+| `disableBatchTimer` | boolean | NO | `false` | When `true`, no background/scheduled flush timer is started; flushing relies solely on the size trigger and explicit `flush()`. Serverless deployments SHOULD set this `true`. See Section 13. |
+
+Batch configuration is fixed at construction time. Implementations MAY omit runtime setters; if
+provided, mutating batch configuration at runtime MUST be lock-guarded and SHOULD be discouraged.
 
 ---
 
@@ -376,8 +415,18 @@ There is no `Authorization` header. Authentication is carried inside the JSON bo
 
 ### 7.3 Request Body
 
-The request body MUST be a JSON array of event objects. Each call MUST send an array with
-exactly one element (no time-based batching in v1).
+The request body MUST be a JSON array of one or more event objects. A request carries a single
+event when batching is inactive (e.g. `env == "dev"`, where `batchSize` is forced to `1`) and
+multiple events when a batch is flushed (see Section 13).
+
+Each event object in the array MUST be fully self-contained: it MUST carry its own `messageId`,
+`createdAt`, `anonymousId`, `eventName`, and `eventProperties`. A batch MAY contain events with
+different `anonymousId` (`streamId`) values, different `eventName`s, and different `createdAt`
+timestamps; implementations MUST NOT hoist, share, or deduplicate per-event fields across batch
+elements, and MUST NOT assume all events in a batch belong to the same stream. The instance-level
+fields (`apiKey`, `appName`, `appVersion`, `libVersion`, `env`, `libPlatform`, and
+`publicEncryptionKey` when present) are identical across a batch but are repeated on every element;
+the wire format has no shared header object.
 
 ```json
 [
@@ -509,8 +558,10 @@ compress a large body on a gzip-capable runtime is **not** conformant.
 **Compression threshold.** Compression applies only when the serialized JSON body is at least
 **1024 bytes** (UTF-8 encoded). Bodies smaller than 1024 bytes MUST be sent uncompressed — for
 small payloads the gzip framing overhead outweighs the savings. The comparison is on UTF-8 **byte
-length** (`>= 1024`), not character count. (The browser SDK compares JavaScript string `.length`;
-server SDKs MUST use byte length, which is the same value already reported in `Content-Length`.)
+length** (`>= 1024`), not character count, and is evaluated at flush time on the **assembled batch
+body actually sent** (the full JSON array — see Section 13). A multi-event batch is far more likely
+to exceed the threshold, but the rule is identical to that for a single-element body. Server SDKs
+MUST use byte length, which is the same value already reported in `Content-Length`.
 
 **Algorithm.** When compression is applied, the body MUST be compressed with gzip (RFC 1952 — the
 gzip wrapper around DEFLATE, not raw zlib/RFC 1950 and not raw DEFLATE/RFC 1951). Every
@@ -558,7 +609,9 @@ enabled, the status code SHOULD be logged.
 ### 7.5 Error Taxonomy
 
 Implementations MUST follow this table exactly. The promise outcome refers to the promise
-returned by `trackSchemaFromEvent`.
+returned by `trackSchemaFromEvent`. The table describes the **immediate-send contract** — i.e. the
+behavior observable per call when the send is synchronous to the call (`batchSize == 1`, always true
+in `dev`). When `batchSize > 1` the send is decoupled from the call; see Section 7.5.2.
 
 | Error category | Example | Promise outcome | Logged? | Retry? |
 |---|---|---|---|---|
@@ -580,6 +633,27 @@ that contain the `apiKey`. Error logs MUST redact these fields if they appear in
 object or response body before passing the error to `console.error` or the language-equivalent
 logging facility.
 
+### 7.5.2 Behavior Under Batching (`batchSize > 1`)
+
+When batching defers the send, the batch's HTTP outcome is not attributable to any individual
+`trackSchemaFromEvent` call (the events in a batch may originate from many calls, and the batch may
+be triggered by a later call, by the scheduled flush, or by `flush()`). Therefore:
+
+| Situation | Behavior |
+|---|---|
+| Event enqueued successfully | `trackSchemaFromEvent` resolves with the extracted schema at enqueue time. |
+| Event dropped by sampling at enqueue | `trackSchemaFromEvent` resolves with the extracted schema; the event is not buffered and no call is made (see §7.7). |
+| Synchronous internal error before enqueue | `Promise.reject("Avo Inspector: something went wrong. Please report to support@avo.app.")` — unchanged from the table above. |
+| Batch send returns non-200 | Logged per §7.5 (in dev/staging with logging enabled). The batch MUST NOT be re-queued (a permanent rejection; re-queuing would loop). Not observable to any `trackSchemaFromEvent` promise. |
+| Batch send network error / timeout | Logged per §7.5. The batch's events SHOULD be re-queued at the front of the buffer for a later flush (subject to `maxQueueSize`; see Section 13). Not observable to any `trackSchemaFromEvent` promise. |
+
+Consequently, the `Promise.resolve([])`-on-non-200 behavior in the §7.5 table is observable per call
+**only** when the send is synchronous to the call (`batchSize == 1`, always true in `dev`). When
+`batchSize > 1`, `trackSchemaFromEvent` always resolves with the extracted schema at enqueue,
+regardless of the batch's eventual HTTP outcome. Re-queue MUST take the buffer lock and MUST NOT
+mutate any event's `messageId` (the stable `messageId` lets the backend tolerate duplicate
+submissions, so at-least-once redelivery is acceptable).
+
 ### 7.6 Timeout
 
 - Request timeout: **10 seconds**. Implementations MUST apply this timeout to every outbound
@@ -595,13 +669,19 @@ logging facility.
 ### 7.7 Sampling
 
 - Default `samplingRate`: `1.0` (send all events).
-- Before sending, the SDK MUST compare a random number (uniformly distributed in `[0.0, 1.0)`)
-  against `samplingRate`. If `random > samplingRate`, the event MUST be dropped silently (no
-  network call is made).
+- Sampling MUST be evaluated **per event, at enqueue time** — before the event is appended to the
+  pending batch (see Section 13). The SDK MUST compare a random number (uniformly distributed in
+  `[0.0, 1.0)`) against `samplingRate`. If `random > samplingRate`, the event MUST be dropped
+  silently: it MUST NOT be enqueued and no network call is made. Whole-batch sampling (a single
+  random check that drops an entire batch) MUST NOT be used — sampling granularity is per event,
+  because a batch MAY mix events from different streams.
 - **Boundary values:**
   - `samplingRate = 1.0` MUST send all events (random from `[0.0, 1.0)` is never `> 1.0`).
   - `samplingRate = 0.0` MUST effectively drop all events (`random > 0.0` is true for all
     non-zero values; treat as "drop all" in practice).
+- The `samplingRate` value written into an event's wire body is the snapshot in effect **at the
+  event's enqueue time** (the value that governed that event's sampling decision), not the value at
+  flush time.
 - The sampling rate is updated from the response body of any successful 200 response.
 - In multi-threaded runtimes, `samplingRate` MUST be updated using a lock or atomic primitive.
   Last-write-wins is acceptable.
@@ -1172,14 +1252,117 @@ returns to ensure in-flight events are delivered.
 
 These are distinct operations and MUST NOT be conflated:
 
-- `destroy()` — **cancel and clean up.** Abandons in-flight requests, resets `pendingCount` to
-  0, clears the keepalive timer. Does NOT wait for in-flight requests.
-- `flush()` — **wait and continue.** Waits for all pending operations to complete (or timeout),
-  then resolves. Does NOT reset state. Instance is fully usable after `flush()` returns.
+- `destroy()` — **cancel and clean up.** Discards the pending batch unsent, abandons in-flight
+  requests, resets `pendingCount` to 0, clears the keepalive and scheduled-flush timers. Does NOT
+  wait for in-flight requests.
+- `flush()` — **wait and continue.** Force-flushes (sends) the pending batch, then waits for all
+  pending operations to complete (or timeout), then resolves. Does NOT reset state. Instance is
+  fully usable after `flush()` returns.
+
+### 12.5 Scheduled Flush Timer vs. Keepalive Timer
+
+The Node.js keepalive timer (Section 12.1) and the batching scheduled-flush timer (Section 13) are
+**different mechanisms** and MUST NOT be conflated:
+
+- The **keepalive timer** is a Node.js-only, no-op timer whose sole purpose is to *hold the event
+  loop open* while a send is in-flight. Non-Node.js SDKs MUST NOT implement it (Section 12.2).
+- The **scheduled-flush timer** (any runtime) does real work: it periodically flushes a non-empty
+  pending batch so partial batches do not linger on idle/low-traffic processes. It MUST NOT hold the
+  process open — in runtimes with a reference-counted event loop it MUST be unref'd (or the
+  language-idiomatic equivalent: daemon thread, weak/background timer). Section 12.2's prohibition is
+  on the 60-second no-op keepalive timer only; it does NOT forbid a non-blocking scheduled flush.
+
+A Node.js SDK MAY have both: the keepalive timer to hold the loop while a send completes, and the
+scheduled-flush timer (unref'd) to drain idle partial batches. Both timers MUST be cleared by
+`destroy()`.
 
 ---
 
-## 13. Out of Scope
+## 13. Batching
+
+### 13.1 Overview
+
+Conformant SDKs accumulate events in an in-memory **pending batch buffer** and send them to the
+Inspector API as a single JSON array (see Section 7.3), flushed when a size or time trigger fires.
+Batching reduces the number of HTTP requests on busy servers. The wire body is already an array, so
+batching changes buffering and lifecycle, not the per-event wire shape.
+
+### 13.2 Configuration
+
+Batch behavior is controlled by the constructor options in Section 5:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `batchSize` | `30` | Flush when the buffer length reaches `batchSize`. **Forced to `1` when `env == "dev"`** (immediate send), overriding any configured value. MUST be ≥ 1. |
+| `batchFlushSeconds` | `30` | Maximum age (seconds) of the oldest buffered event before a time/idle flush SHOULD occur. MUST be > 0. |
+| `maxQueueSize` | `1000` | Hard cap on buffered events; FIFO-oldest drop on overflow. |
+| `disableBatchTimer` | `false` | When `true`, no background/scheduled flush timer is started. |
+
+**`dev` forces `batchSize = 1` (MUST).** When `env == "dev"`, the SDK MUST behave as if
+`batchSize == 1` regardless of the configured value, sending each event immediately. This guarantees
+immediate visibility during development.
+
+Batch configuration is fixed at construction time (Section 5).
+
+### 13.3 Flush Triggers
+
+The buffer is flushed when **either** trigger fires:
+
+- **Size (MUST):** when the buffer length reaches `batchSize`.
+- **Time / idle (SHOULD):** when the oldest buffered event is older than `batchFlushSeconds`,
+  *independently of whether new events arrive*. Evaluating the time trigger only on the next enqueue
+  is NOT sufficient for a long-running server process and MUST NOT be the sole time-flush mechanism
+  in non-serverless, long-running deployments; such SDKs SHOULD run a scheduled flush. Any
+  scheduled/background flush MUST be non-blocking and MUST NOT prevent the process from exiting
+  (Section 12.5). The size trigger remains MUST in all deployments.
+
+A flush of an empty buffer is a no-op (no request is made).
+
+### 13.4 Send and Concurrency
+
+Under a single lock, the SDK appends the event and evaluates the triggers; if flushing, it moves the
+buffer contents to a local variable and resets the shared buffer to empty (the atomic "swap and
+clear" of Section 3.1). The HTTP send (the assembled array as the request body) MUST be performed
+OUTSIDE the lock. The buffer is shared mutable state and MUST be synchronized per Section 3.1.
+
+### 13.5 Buffer Bound and Failure Handling
+
+- The buffer MUST be bounded by `maxQueueSize` (default **1000**). When appending would exceed the
+  cap, the SDK MUST drop the **oldest** buffered events first (FIFO) to make room for the newest.
+- Drops due to the cap MUST be logged (a count only — never event contents; see §7.5.1) when logging
+  is enabled. Silent data loss is not acceptable on a long-running server.
+- On a **transient** send failure (network error or timeout), the SDK SHOULD re-queue the failed
+  batch's events at the **front** of the buffer for a later flush attempt, subject to `maxQueueSize`.
+- On a **non-200** HTTP response, the SDK MUST NOT re-queue (a permanent rejection would otherwise
+  loop forever); the batch is dropped and the status is logged per §7.5.
+- Re-queue MUST take the buffer lock and MUST NOT mutate any event's `messageId`. Because the backend
+  tolerates duplicate submissions of the same `messageId`, at-least-once redelivery is acceptable.
+
+### 13.6 Persistence and Lifecycle
+
+- The buffer is in-memory only and MUST NOT be persisted (Section 3.2). Buffered-but-unsent events
+  are lost on crash/kill/exit-without-flush (at-most-once delivery).
+- `flush()` MUST force-flush the pending batch then await (Section 4.6). In serverless environments,
+  callers MUST `flush()` before the handler returns, and SDKs SHOULD set `disableBatchTimer` (a
+  background timer may be suspended between invocations or leak across warm-container reuse).
+- `destroy()` MUST discard the pending batch unsent and stop the scheduled-flush timer (Section 4.5).
+
+### 13.7 Wire Shape
+
+A flushed batch is a JSON array of one or more self-contained event objects (Section 7.3); a batch
+MAY mix `anonymousId`/`eventName`/`createdAt` across elements. `Content-Type` remains
+`application/json` (Section 7.2). gzip applies to the assembled batch body per the 1024-byte rule
+(Section 7.3.7).
+
+### 13.8 Promise and Sampling Semantics
+
+- `trackSchemaFromEvent` resolves with the extracted schema at enqueue time (Section 4.2); the
+  batch's eventual HTTP outcome is not observable per call when `batchSize > 1` (Section 7.5.2).
+- Sampling is evaluated per event at enqueue (Section 7.7); dropped events are never buffered.
+
+---
+
+## 14. Out of Scope
 
 The following are explicitly out of scope for spec v1. Implementations MUST NOT include them;
 AI agents generating SDKs MUST NOT add them.
@@ -1188,8 +1371,9 @@ AI agents generating SDKs MUST NOT add them.
   session management — none of these apply to server-side SDKs.
 - **Hosting, publishing, or packaging generated SDKs.** Publishing to RubyGems, PyPI,
   Crates.io, npm, Maven Central, etc. is the customer's responsibility.
-- **Batching.** Time-based or count-based batching is deferred to v1.1.0. Each event MUST be
-  sent as a single-element array.
+- **Persistent / durable queuing.** Writing the pending batch to disk or any persistent store, and
+  cross-process or cross-restart batch durability, are out of scope. The batch buffer is in-memory
+  only (Sections 3.2 and 13); buffered-but-unsent events are lost on process exit without `flush()`.
 - **Telemetry or usage reporting** from generated SDKs.
 - **sessionId / visitorId / userId.** Server SDKs MUST NOT include these fields.
 
@@ -1258,4 +1442,4 @@ manifest metadata, or a `SPEC_VERSION` constant).
 ---
 
 *Spec version: 1.0.0 — Initial publication.*
-*Last updated: 2026-05-25.*
+*Last updated: 2026-06-23.*

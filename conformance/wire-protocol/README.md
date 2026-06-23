@@ -14,6 +14,14 @@ and correctly handles `streamId` edge cases.
 | `wire-5` | Empty `streamId` — `anonymousId` becomes `""` (spec Edge Case 10) |
 | `wire-6` | Large body (≥ 1024 bytes) — MUST be gzip-compressed on any gzip-capable runtime (SPEC.md §7.3.7); transparent after gunzip |
 | `wire-7` | Small body (< 1024 bytes) — MUST be sent uncompressed (no `Content-Encoding` header) |
+| `wire-8` | Batching — `env: staging` + `batchSize: 30`; one tracked event is buffered, not sent (0 HTTP calls before flush) (SPEC.md §13) |
+
+> **Batching coverage.** The existing `dev` fixtures (`wire-1`–`wire-7`, all `env: "dev"`) run with
+> `batchSize` forced to 1, so they also serve as the automated check for the immediate-send
+> (`batchSize == 1`) batching path. `wire-8` is the only multi-event batching behavior the
+> single-invocation harness can assert automatically (buffered, not sent). The remaining batching
+> behaviors — `flush()` drains a partial batch, size/time flush, `maxQueueSize` overflow, re-queue —
+> are verified via the manual matrix in [`../README.md`](../README.md).
 
 ## How It Works
 
@@ -121,7 +129,7 @@ See [`conformance/runner-contract.md`](../runner-contract.md) for the full harne
 
 ## Conformance Definition
 
-An SDK **passes** the wire-protocol suite when all 7 fixtures pass:
+An SDK **passes** the wire-protocol suite when all 8 fixtures pass:
 
 - `wire-1`: The harness exits with code `0` and the mock server recorded exactly 1 request matching the
   expected body (with format validation applied to placeholder fields).
@@ -136,3 +144,6 @@ An SDK **passes** the wire-protocol suite when all 7 fixtures pass:
   assertion per SPEC.md §7.3.7 and MUST document the limitation; it must still send a correct uncompressed body.)
 - `wire-7`: The harness exits with code `0` and the mock server recorded exactly 1 request with **no**
   `Content-Encoding` header (the body is below the 1024-byte gzip threshold, so it MUST be sent uncompressed).
+- `wire-8`: The harness exits with code `0`, the promise resolves, and the mock server recorded **0**
+  requests — with `env: "staging"` and `batchSize: 30`, a single tracked event is buffered (below the
+  size threshold) and MUST NOT be sent before a flush (SPEC.md §13.3).

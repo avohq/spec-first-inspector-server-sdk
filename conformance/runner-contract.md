@@ -101,6 +101,10 @@ The input envelope is a JSON object with the following fields.
 | `version` | string | YES | Application version string. |
 | `appName` | string | NO | Application name. Defaults to `""` if absent. |
 | `publicEncryptionKey` | string | NO | P-256 public key in hex (66 or 130 chars). Present only for encryption-related fixtures. |
+| `batchSize` | integer | NO | Batch flush size (SPEC.md §13). Present only for batching fixtures (e.g. `wire-8`). When absent, the SDK default applies (30, forced to 1 in `dev`). |
+| `batchFlushSeconds` | number | NO | Batch time/idle flush threshold in seconds (SPEC.md §13). When absent, the SDK default applies (30). |
+| `maxQueueSize` | integer | NO | Maximum buffered events before FIFO-oldest drop (SPEC.md §13). When absent, the SDK default applies (1000). |
+| `disableBatchTimer` | boolean | NO | When `true`, the SDK starts no background/scheduled flush timer (SPEC.md §13). When absent, defaults to `false`. |
 
 ### `operation` values and `input` shapes
 
@@ -464,9 +468,11 @@ Suite runners SHOULD produce a conformance report with the following structure p
 ### Versioning
 
 The harness contract follows the same versioning policy as the spec (`VERSIONING.md`). The
-contract version is `1.0.0`. Breaking changes to the input/output envelope schema or exit code
-semantics MUST increment the MAJOR version. Additive fields (new optional input or output
-fields) MUST increment the MINOR version.
+contract version is `1.1.0` — the `1.1.0` revision additively introduced the optional batch
+configuration fields (`batchSize`, `batchFlushSeconds`, `maxQueueSize`, `disableBatchTimer`) in the
+`constructor` object. Breaking changes to the input/output envelope schema or exit code semantics
+MUST increment the MAJOR version. Additive fields (new optional input or output fields) MUST
+increment the MINOR version.
 
 SDK authors SHOULD record which version of the runner contract their harness implements (e.g.,
 in a `HARNESS_CONTRACT_VERSION` constant or a comment at the top of the harness source file).

@@ -34,8 +34,8 @@ appears.
 
 | Artifact | Description |
 |---|---|
-| `SPEC.md` | Full normative prose specification (RFC 2119 language, 13 sections) |
-| `AGENTS.md` | AI-agent SDK generation guide: checklist, reading order, conformance, definition of done (19 ACs) |
+| `SPEC.md` | Full normative prose specification (RFC 2119 language, 14 sections) |
+| `AGENTS.md` | AI-agent SDK generation guide: checklist, reading order, conformance, definition of done (25 ACs) |
 | `openapi.yaml` | OpenAPI 3.1 document for the Inspector HTTP API |
 | `schemas/base-body.json` | JSON Schema: base request body fields |
 | `schemas/event-batch.json` | JSON Schema: top-level request array |
@@ -45,7 +45,7 @@ appears.
 | `schemas/event-property-encrypted.json` | JSON Schema: encrypted property object |
 | `schemas/schema-entry.json` | JSON Schema: schema extraction entry |
 | `conformance/schema-extraction/fixtures.json` | 13 golden schema-extraction fixtures |
-| `conformance/wire-protocol/fixtures.json` | 7 wire-protocol golden fixtures (wire-1 through wire-7) |
+| `conformance/wire-protocol/fixtures.json` | 8 wire-protocol golden fixtures (wire-1 through wire-8) |
 | `conformance/error-handling/fixtures.json` | 3 error-handling fixtures (samplingRate boundary, non-200, empty properties) |
 | `conformance/runner-contract.md` | Normative stdin/stdout harness protocol |
 
@@ -71,7 +71,9 @@ appears.
 - **Constructor validation:** throw on missing/whitespace `apiKey` or `version`
   with exact error message strings
 - **`enableLogging` scope:** process-wide (class-level), not per-instance
-- **`destroy()` contract:** resets `pendingCount` to 0, clears keepalive timer
+- **`destroy()` contract:** terminal — resets `pendingCount` to 0, clears the keepalive and
+  scheduled-flush timers, discards the pending batch unsent; a subsequent `trackSchemaFromEvent()`
+  is a no-op returning `Promise.resolve([])`
 - **gzip request compression (mandatory when feasible):** On any gzip-capable
   runtime, SDKs MUST gzip-compress (RFC 1952) request bodies whose serialized
   UTF-8 byte length is `>= 1024`, sending `Content-Encoding: gzip` with the
@@ -85,13 +87,33 @@ appears.
   fixtures `wire-6` (large body, gzip transparent) and `wire-7` (small body MUST
   be uncompressed), asserted via the new `expected_request_headers` field.
 
+### Batching
+
+- **In-memory batching:** SDKs accumulate events in an in-memory pending batch buffer and send
+  them as a JSON array. Flush triggers: buffer length reaches `batchSize` (MUST) or the oldest
+  buffered event exceeds `batchFlushSeconds` (SHOULD, via a non-blocking scheduled flush). Defaults
+  `batchSize` 30, `batchFlushSeconds` 30; **`env == "dev"` forces `batchSize = 1`** (immediate send).
+  New OPTIONAL constructor options: `batchSize`, `batchFlushSeconds`, `maxQueueSize` (default 1000),
+  `disableBatchTimer`. `EventBatch` `maxItems` cap removed (`minItems: 1` retained) — the body is now
+  an array of one or more self-contained event objects that MAY mix `anonymousId`/`eventName`.
+- **Server-nature divergences (not the browser behavior):** buffer is in-memory only and never
+  persisted (at-most-once; lost on crash/exit-without-flush); the buffer is synchronized (atomic
+  swap-and-clear, no HTTP send under the lock); sampling is per event at enqueue (not whole-batch);
+  `maxQueueSize` FIFO-drops oldest and logs the drop count; transient failures re-queue at the front
+  while a non-200 does not (and `messageId` is never mutated on re-queue); `trackSchemaFromEvent`
+  resolves with the extracted schema at enqueue. `Content-Type` stays `application/json` and gzip
+  applies to the assembled batch body. See SPEC.md §13 and conformance fixture `wire-8`
+  (no-premature-flush) plus the manual batching matrix in `conformance/README.md`.
+
 ### Runtime Lifecycle Requirements
 
 - **`flush()` requirement:** Non-Node.js SDKs MUST implement `flush()`. Node.js SDKs
   use a 60-second keepalive timer instead; non-Node.js runtimes MUST NOT use the
   keepalive-timer approach (it causes hangs) — they MUST expose `flush()` and
-  document it as required before process or function-handler exit. Default timeout:
-  10,000 ms. `flush()` MUST resolve (not reject) in all cases. See SPEC.md §4.6 and §12.
+  document it as required before process or function-handler exit. `flush()` MUST
+  **force-flush the pending batch** (send all buffered events) and then await completion.
+  Default timeout: 10,000 ms. `flush()` MUST resolve (not reject) in all cases. See SPEC.md §4.6,
+  §12, and §13.6.
 
 ### Spec Design Intents
 
