@@ -22,11 +22,9 @@
 8. [ID Generation Format](#8-id-generation-format)
 9. [Schema Extraction Algorithm](#9-schema-extraction-algorithm)
 10. [Schema Extraction Golden Fixtures](#10-schema-extraction-golden-fixtures)
-11. [Deduplication Behavior](#11-deduplication-behavior)
-12. [Encryption](#12-encryption)
-13. [Keepalive Timer and Flush](#13-keepalive-timer-and-flush)
-14. [Open Questions](#14-open-questions)
-15. [Out of Scope](#15-out-of-scope)
+11. [Encryption](#11-encryption)
+12. [Keepalive Timer and Flush](#12-keepalive-timer-and-flush)
+13. [Out of Scope](#13-out-of-scope)
 
 ---
 
@@ -49,20 +47,18 @@ instructions in `AGENTS.md`, and produce a working, conformant Ruby Inspector SD
 
 ## 2. Source-of-Truth Strategy
 
-**The Inspector HTTP wire protocol is the true source of truth.** Both the Node.js reference SDK
-(`node-avo-inspector`) and this specification describe how to implement it. This specification
-does NOT mirror Node.js SDK internals — it captures the contract: what the API expects, what
-events look like on the wire, and what the public SDK surface MUST be.
+**The Inspector HTTP wire protocol is the true source of truth.** This specification captures the
+contract: what the API expects, what events look like on the wire, and what the public SDK surface
+MUST be. It is self-contained — everything a conformant SDK must do is stated here and verified by
+the conformance suite.
 
-When reading the Node.js SDK to understand a behavior, distinguish:
+When implementing a behavior, distinguish:
 
-- **Wire-protocol behaviors** — MUST be in this spec and MUST be implemented by all conformant SDKs.
-- **Node.js-idiomatic choices** — MAY be adapted idiomatically in other languages.
-- **Node.js-specific quirks** — SHOULD NOT propagate to generated SDKs; flagged explicitly in this spec.
+- **Wire-protocol behaviors** — MUST be implemented by all conformant SDKs exactly as specified here.
+- **Language-idiomatic choices** — MAY be adapted idiomatically per target language.
 
 **Practical implication:** Generated SDKs are conformant if they pass the conformance suite and
-implement the normative requirements in this document. They are NOT required to match the Node.js
-SDK's internal implementation details.
+implement the normative requirements in this document.
 
 ---
 
@@ -75,7 +71,7 @@ server-side-only requirements; browser/client-side concerns are out of scope.
 
 - Implementations MUST be safe to use in concurrent environments (multi-threaded servers, async
   runtimes, goroutines, Ractors, etc.).
-- Shared mutable state (sampling rate, logging flag, deduplication store) MUST be protected
+- Shared mutable state (sampling rate, logging flag) MUST be protected
   by appropriate synchronization primitives (mutex, lock, atomic, etc.) in multi-threaded
   runtimes.
 - The `samplingRate` field MUST be updated using a lock or atomic primitive in Go, Python
@@ -86,8 +82,6 @@ server-side-only requirements; browser/client-side concerns are out of scope.
 
 - Implementations MUST NOT write to disk or any persistent store (database, file system, etc.).
 - All state is in-memory only.
-- The deduplication store (if implemented) is in-memory and ephemeral — it does not survive
-  process restart.
 
 ### 3.3 No sessionId or visitorId
 
@@ -99,17 +93,12 @@ server-side-only requirements; browser/client-side concerns are out of scope.
 
 ### 3.4 Keepalive and Flush
 
-- Node.js SDKs MUST implement a keepalive timer (see Section 13).
-- Non-Node.js SDKs MUST implement a `flush()` method (see Section 4.6 and Section 13).
+- Node.js SDKs MUST implement a keepalive timer (see Section 12).
+- Non-Node.js SDKs MUST implement a `flush()` method (see Section 4.6 and Section 12).
 - The shutdown contract MUST be documented in the SDK README: callers MUST invoke `flush()`
   (non-Node) or `await` the promise returned by `trackSchemaFromEvent` before process exit,
   if events may be in-flight.
 
-### 3.5 No Event-Spec Validation in v1
-
-- Event-spec validation (validating event properties against Avo event schemas fetched from
-  the backend) is out of scope for v1. Implementations MAY stub this subsystem. It will be
-  specified in v2.
 
 ---
 
@@ -127,7 +116,7 @@ new AvoInspector(options: {
   env: "dev" | "staging" | "prod";   // REQUIRED (falls back to "dev" if invalid)
   version: string;                   // REQUIRED
   appName?: string;                  // OPTIONAL, defaults to ""
-  publicEncryptionKey?: string;      // OPTIONAL, see Section 12
+  publicEncryptionKey?: string;      // OPTIONAL, see Section 11
 })
 ```
 
@@ -163,23 +152,17 @@ trackSchemaFromEvent(
 
 **Semantics (in order of execution):**
 
-1. Constructs a stream-scoped dedup key: `streamId + "\0" + eventName`. If `streamId` is absent
-   or empty, the key uses an empty prefix (`"" + "\0" + eventName`). See Section 11 for the full
-   deduplication algorithm.
-2. Checks the deduplicator (if implemented): if the same event+properties combination was sent
-   via Avo Codegen (the `avoFunctions` bucket) within the last 500 ms for the same stream,
-   MUST return `Promise.resolve([])` immediately without sending an HTTP request.
-3. If not deduplicated: calls `extractSchema(eventProperties)`, then sends the extracted schema
-   to the Inspector API (see Section 7).
-4. Returns a promise that resolves to the extracted schema array (or `[]` if deduplicated). On
-   a non-200 HTTP response, the promise still resolves but with `[]` regardless of whether
-   `eventProperties` was non-empty (see §7.5 error taxonomy). The fixture `error-2` (non-empty
-   props + 400 → `[]`) is the source of truth for this behavior.
-5. On any synchronous internal error (e.g., stream ID validation throwing): MUST log to
+1. Calls `extractSchema(eventProperties)`, then sends the extracted schema to the Inspector API
+   (see Section 7).
+2. Returns a promise that resolves to the extracted schema array. On a non-200 HTTP response, the
+   promise still resolves but with `[]` regardless of whether `eventProperties` was non-empty (see
+   §7.5 error taxonomy). The fixture `error-2` (non-empty props + 400 → `[]`) is the source of
+   truth for this behavior.
+3. On any synchronous internal error (e.g., stream ID validation throwing): MUST log to
    `console.error` (or language-equivalent) and MUST return
    `Promise.reject("Avo Inspector: something went wrong. Please report to support@avo.app.")`.
    The rejection value MUST be this exact string, not the original error object or message.
-6. MUST keep the process alive (via keepalive timer in Node.js, or pending-count tracking for
+4. MUST keep the process alive (via keepalive timer in Node.js, or pending-count tracking for
    `flush()` in non-Node.js) until the network call completes.
 
 **`streamId` rules:**
@@ -212,14 +195,10 @@ extractSchema(
 - MUST return an empty array `[]` if `eventProperties` is `null`, `undefined`, or not provided.
 - MUST NOT throw to the caller. On any internal error, MUST catch the exception and return `[]`.
 
-**Note on the safe-wrapper boundary:** The schema parser itself (`AvoSchemaParser` in the Node.js
-reference SDK) does not have its own try/catch and may throw on pathological input.
-`AvoInspector.extractSchema` is the safe wrapper that catches all exceptions and returns `[]`.
-Implementations MUST apply this catch at the `extractSchema` boundary, not inside the parser.
-
-**Note on `extractSchema` side effect:** Implementations MAY emit a console warning inside
-`extractSchema` if recently Codegen-tracked params match (to detect double-reporting). The
-return value is unaffected by this warning.
+**Note on the safe-wrapper boundary:** The underlying schema parser (`AvoSchemaParser`) does not
+have its own try/catch and may throw on pathological input. `AvoInspector.extractSchema` is the
+safe wrapper that catches all exceptions and returns `[]`. Implementations MUST apply this catch at
+the `extractSchema` boundary, not inside the parser.
 
 ---
 
@@ -264,9 +243,6 @@ Cleans up all resources. After `destroy()` is called, state MUST be as follows:
 |---|---|---|
 | `pendingCount` | `0` | Reset; in-flight network calls are abandoned |
 | `keepAliveTimer` | `null` / cleared | Timer is cancelled |
-| `eventSpecFetcher` | `null` | Destroyed |
-| `eventSpecCache` | `null` | Flushed and cleared |
-| `eventValidator` | `null` | Cleared |
 | `samplingRate` | persisted (NOT reset) | Value from last 200 response is retained |
 | `apiKey`, `env`, `version`, `appName` | persisted (NOT reset) | Constructor options retained |
 | `shouldLog` (process-wide) | persisted (NOT reset) | Process-wide flag is not affected |
@@ -283,7 +259,6 @@ document this behavior.
 
 ### 4.6 `flush`
 
-> **(New requirement — not present in the node reference SDK.)**
 > Non-Node.js SDKs MUST implement `flush()`. Node.js SDKs MAY omit it (the keepalive timer
 > serves the same purpose in that runtime).
 
@@ -311,30 +286,6 @@ handler returns.
 
 MUST be documented in the SDK README as required before process/function exit when events may
 be in-flight.
-
----
-
-### 4.7 `_avoFunctionTrackSchemaFromEvent` (Avo Codegen Integration — Optional)
-
-```typescript
-_avoFunctionTrackSchemaFromEvent(
-  eventName: string,
-  eventProperties: { [propName: string]: any },
-  eventId: string,
-  eventHash: string,
-  streamId?: string
-): Promise<Array<{ propertyName: string; propertyType: string; children?: any }>>
-```
-
-This method is called by Avo Codegen-generated code, not by the end user. It behaves identically
-to `trackSchemaFromEvent` but uses the `avoFunctions` deduplication bucket (so manual-instrumented
-and Codegen-instrumented calls can cross-detect duplicates). Implementations MAY implement this
-method to support Avo Codegen integration.
-
-**Same-bucket dedup clarification:** Calls within the same bucket (e.g., two
-`_avoFunctionTrackSchemaFromEvent` calls for the same event) are NOT suppressed. Codegen-generated
-code is assumed to call this method exactly once per event invocation; if the same event fires
-twice from Codegen, both sends are intentional and MUST NOT be silently dropped.
 
 ---
 
@@ -367,11 +318,11 @@ Generated SDKs MUST use these exact string values. The Inspector backend depends
 
 ### 6.2 Behavioral Implications
 
-| Env | Logging default | Encryption active? | Event spec validation |
-|---|---|---|---|
-| `"dev"` | Enabled (`shouldLog = true`) | Yes (if `publicEncryptionKey` provided) | Yes (if implemented) |
-| `"staging"` | Disabled (`shouldLog = false`) | Yes (if `publicEncryptionKey` provided) | Yes (if implemented) |
-| `"prod"` | Disabled (`shouldLog = false`) | **No** (encryption is never applied in prod) | No |
+| Env | Logging default | Encryption active? |
+|---|---|---|
+| `"dev"` | Enabled (`shouldLog = true`) | Yes (if `publicEncryptionKey` provided) |
+| `"staging"` | Disabled (`shouldLog = false`) | Yes (if `publicEncryptionKey` provided) |
+| `"prod"` | Disabled (`shouldLog = false`) | **No** (encryption is never applied in prod) |
 
 ### 6.3 Invalid Env Fallback
 
@@ -415,7 +366,7 @@ calls to that URL instead of `https://api.avo.app`. This is used by the conforma
 | `Content-Encoding` | `gzip` — present ONLY when the body is gzip-compressed (see Section 7.3.7). MUST be absent for uncompressed bodies. |
 
 There is no `Authorization` header. Authentication is carried inside the JSON body via the
-`apiKey` field. See Section 14 (Open Questions) for the auth discussion.
+`apiKey` field.
 
 > **`Content-Type` stays `application/json` for server SDKs.** The browser SDK sends
 > compressed bodies with `Content-Type: text/plain` to avoid a CORS preflight (`OPTIONS`)
@@ -443,10 +394,7 @@ exactly one element (no time-based batching in v1).
     "samplingRate": 1.0,
     "type": "event",
     "eventName": "string",
-    "eventProperties": [],
-    "avoFunction": false,
-    "eventId": null,
-    "eventHash": null
+    "eventProperties": []
   }
 ]
 ```
@@ -479,9 +427,6 @@ These fields MUST be present on every event object:
 | `type` | `"event"` | Literal string. MUST be present. |
 | `eventName` | string | Name of the tracked event. |
 | `eventProperties` | array | Extracted schema (array of property objects). See Section 9. |
-| `avoFunction` | boolean | `true` if sent via `_avoFunctionTrackSchemaFromEvent` (Codegen path); `false` for `trackSchemaFromEvent`. |
-| `eventId` | string or null | Avo Codegen event ID. MUST be `null` when `avoFunction` is `false`. |
-| `eventHash` | string or null | Avo Codegen event hash. MUST be `null` when `avoFunction` is `false`. |
 
 #### 7.3.3 `libVersion` Format
 
@@ -526,7 +471,7 @@ MUST use a union/sum type or interface/any type for `children` elements.
 
 #### 7.3.5 Property Object (Encrypted)
 
-When encryption is active (see Section 12):
+When encryption is active (see Section 11):
 
 ```json
 {
@@ -680,10 +625,6 @@ logging facility.
 - `trackingId` and `sessionId` MUST NOT be sent. They have been removed from the server SDK
   wire format.
 
-> **Note (informational):** The Node.js SDK has an internal `generatedAnonymousId` field reserved
-> for future use. Currently it is always `""`, so the observable fallback is `""`. Generated SDKs
-> do not need to implement this field.
-
 ---
 
 ## 9. Schema Extraction Algorithm
@@ -788,13 +729,10 @@ conformance fixture 3 is:
 
 - If the calling language passes a literal `0.0` and the runtime cannot distinguish it from `0`,
   the SDK MUST classify it as `"float"` per this spec.
-- This is a spec design intent — it is intentionally different from the Node.js reference SDK
-  output of `"int"` for `0.0`.
 
 > **Spec design intent note:** The `0.0` → `"float"` rule is a forward-looking requirement for
 > generated SDKs in statically-typed languages where `0.0` and `0` are genuinely different
-> runtime types. The Node.js reference SDK produces `"int"` for `0.0` because `Number.isInteger`
-> returns `true`. Generated SDKs in statically-typed languages MUST use the declared type.
+> runtime types. Generated SDKs in statically-typed languages MUST use the declared type.
 
 #### 9.3.1.1 Parser Configuration Requirements
 
@@ -823,16 +761,15 @@ declared/runtime type as the authority.
 
 #### 9.3.2 Recursion Depth
 
-The `mapping` function is recursive. The Node.js reference SDK has no recursion limit.
-Implementations in languages with fixed recursion limits (Python default: 1000; Ruby fiber:
-limited) SHOULD impose a maximum recursion depth of 10 levels. If the limit is reached, the
-property MUST be included with `propertyType: "object"` and `children: []` (depth truncation,
-not an error). Implementations MAY choose a higher limit; they MUST NOT silently crash on
-pathological inputs.
+The `mapping` function is recursive. Implementations in languages with fixed recursion limits
+(Python default: 1000; Ruby fiber: limited) SHOULD impose a maximum recursion depth of 10 levels.
+If the limit is reached, the property MUST be included with `propertyType: "object"` and
+`children: []` (depth truncation, not an error). Implementations MAY choose a higher limit; they
+MUST NOT silently crash on pathological inputs.
 
 > **Note:** The 10-level truncation rule is a spec recommendation for languages with fixed stack
-> limits. It is NOT verified by conformance fixtures against the Node.js reference SDK (which
-> has no such limit). Conformance fixtures test to a maximum of 3 levels of nesting.
+> limits. It is not exercised by the conformance fixtures, which test to a maximum of 3 levels of
+> nesting.
 
 #### 9.3.3 `removeDuplicates` Cross-Language Guidance
 
@@ -910,8 +847,7 @@ Note: `undefined` values MUST be treated identically to `null`.
 
 Note: `0.0` MUST be `"float"` because the runtime type is float/double. In statically-typed
 languages, use the declared type. In JavaScript, `0.0` is indistinguishable from `0` at runtime;
-JS SDKs MUST classify it as `"float"` per this spec, which intentionally differs from the
-Node.js reference SDK output of `"int"` for `0.0`.
+JS SDKs MUST classify it as `"float"` per this spec.
 
 ### Fixture 4 — Nested object
 
@@ -1122,97 +1058,15 @@ See Section 9.3.2 for the recursion depth truncation rule.
 
 ---
 
-## 11. Deduplication Behavior
+## 11. Encryption
 
-### 11.1 Status: OPTIONAL / SHOULD Implement
-
-Deduplication is OPTIONAL for implementations. The Inspector backend handles duplicate-event
-semantics server-side. Implementations MAY implement deduplication for HTTP-traffic reduction,
-but MUST NOT implement it as a correctness mechanism.
-
-**Decision rationale:** The Inspector backend is idempotent — receiving the same event schema
-twice does no harm. Deduplication prevents double-reporting when Avo Codegen and manual
-instrumentation both fire for the same event (a common instrumentation pattern). This is an
-SDK-level performance optimization, not a wire-protocol requirement.
-
-### 11.2 Two-Bucket Algorithm
-
-When implemented, dedup MUST use exactly two buckets:
-
-- `avoFunctionEvents` — for calls via `_avoFunctionTrackSchemaFromEvent` (Codegen path)
-- `manualEvents` — for calls via `trackSchemaFromEvent` (manual instrumentation path)
-
-### 11.3 Dedup Key Formula
-
-The dedup record key MUST be: `streamId + "\0" + eventName`
-
-Where:
-
-- `streamId` is the caller-supplied stream ID (or `""` if absent).
-- `"\0"` is the null byte separator.
-- `eventName` is the event name string.
-
-Implementations MUST NOT embed event properties inside the key string. Event properties are
-stored separately alongside the key and compared via deep structural equality when a cross-bucket
-lookup occurs.
-
-### 11.4 Parameter Matching
-
-Event properties are stored alongside the key and compared via **recursive deep structural
-equality over own properties** when a cross-bucket lookup occurs:
-
-- Two objects are equal iff they have the same own property names and each corresponding value
-  is deeply equal: primitives by `===` (or language-equivalent strict equality), arrays
-  element-wise, objects recursively.
-- Key insertion order MUST NOT affect the result (property lookup is order-independent).
-- Implementations MAY use canonical-JSON serialization as an alternative, as long as semantics
-  match for plain JSON-like inputs (i.e., `{a:1, b:2}` and `{b:2, a:1}` are considered equal).
-
-Two calls with the same `streamId` and `eventName` but different `eventProperties` MUST NOT be
-deduplicated (the deep-equality check on properties will fail).
-
-### 11.5 Dedup Window
-
-Events older than **500 ms** MUST be evicted from the dedup store. A subsequent duplicate
-event after eviction MUST be registered and sent.
-
-### 11.6 Cross-Bucket Suppression
-
-- If an event is recorded in the `avoFunctions` bucket, a subsequent call to the `manual`
-  bucket with the same key and same params within 500 ms MUST be suppressed (and vice versa).
-- Same-bucket same-key events are NOT suppressed. Two `trackSchemaFromEvent` calls for the
-  same event are both sent.
-- Once a dedup suppression fires, both records MUST be deleted from their respective buckets
-  (one-shot deletion).
-
-### 11.7 Cross-Stream Non-Deduplication
-
-Two calls with different `streamId` values for the same event name and properties MUST NOT be
-deduplicated. The dedup key includes `streamId`, making them distinct keys.
-
-### 11.8 Conformance Testing Note
-
-> **Cross-bucket multi-step conformance requires manual testing.**
->
-> The single-invocation harness protocol (see "Implementation checklist" in `conformance/runner-contract.md`) cannot
-> support stateful multi-step sequences where one invocation sets up bucket state for a second
-> invocation. SDK authors MUST manually verify cross-bucket dedup scenarios (e.g.,
-> `_avoFunctionTrackSchemaFromEvent` followed by `trackSchemaFromEvent` suppression) by writing
-> a custom integration test in the SDK's test suite. The conformance suite deduplication fixtures
-> cover only single-invocation scenarios. Conformance suite deduplication tests are marked
-> OPTIONAL.
-
----
-
-## 12. Encryption
-
-### 12.1 Status: OPTIONAL / MAY Implement in v1
+### 11.1 Status: OPTIONAL / MAY Implement in v1
 
 Encryption is an opt-in feature. Generated SDKs MAY omit it in v1 and add it in a later release.
 When implemented, the wire format MUST be followed exactly (it is cross-SDK and the backend
 depends on the byte layout).
 
-### 12.2 Applicability Rules
+### 11.2 Applicability Rules
 
 Encryption is ACTIVE when ALL of the following are true:
 
@@ -1221,7 +1075,7 @@ Encryption is ACTIVE when ALL of the following are true:
 
 Encryption is INACTIVE in `prod` even if a key is provided.
 
-### 12.3 Algorithm
+### 11.3 Algorithm
 
 **Algorithm:** ECIES (Elliptic Curve Integrated Encryption Scheme) with P-256 (prime256v1 /
 secp256r1).
@@ -1231,7 +1085,7 @@ secp256r1).
 - Compressed: 66 hex characters, prefix `02` or `03`
 - Uncompressed: 130 hex characters, prefix `04`
 
-### 12.4 Wire Format
+### 11.4 Wire Format
 
 The encrypted property value is base64-encoded. The decoded bytes MUST have this exact layout:
 
@@ -1252,7 +1106,7 @@ The encrypted property value is base64-encoded. The decoded bytes MUST have this
 > Implementations MUST use exactly 16 bytes to maintain wire compatibility. Do NOT "fix" this
 > to 12 bytes — doing so will produce ciphertext that the Inspector backend cannot decrypt.
 
-### 12.5 KDF
+### 11.5 KDF
 
 AES key = `SHA-256(ECDH shared secret X-coordinate)`
 
@@ -1263,26 +1117,26 @@ Implementations MUST NOT hex-encode the shared secret before hashing:
 `SHA-256(raw_bytes)` ≠ `SHA-256(hex_string)`. Cross-implementation encryption will be silently
 incompatible if the wrong encoding is used.
 
-### 12.6 Plaintext
+### 11.6 Plaintext
 
 `JSON.stringify(rawPropertyValue)` — the JSON-encoded raw property value, not the type string.
 Missing properties MUST encrypt the string literal `"null"`.
 
-### 12.7 List-Type Omission
+### 11.7 List-Type Omission
 
 List-type properties MUST be omitted entirely from the encrypted property array when encryption
 is active. They are not sent to the server.
 
-### 12.8 Encryption Failure
+### 11.8 Encryption Failure
 
 When encryption fails (invalid key, crypto error): the property MUST be omitted from the array;
 a warning MUST be logged; other properties MUST continue to be sent.
 
 ---
 
-## 13. Keepalive Timer and Flush
+## 12. Keepalive Timer and Flush
 
-### 13.1 Node.js Keepalive
+### 12.1 Node.js Keepalive
 
 Node.js SDKs MUST use a keepalive mechanism to prevent the process from exiting while a network
 send is in-flight. Callers typically do not `await` the promise returned by `trackSchemaFromEvent`,
@@ -1294,7 +1148,7 @@ so without a keepalive the process may exit before the HTTP call completes.
 - Timer interval: **60 seconds** (no-op callback — the sole purpose is to hold the event loop).
 - Timer is cleared when `pendingCount` returns to 0 (all pending operations complete).
 
-### 13.2 Non-Node.js: `flush()` Requirement
+### 12.2 Non-Node.js: `flush()` Requirement
 
 Non-Node.js SDKs MUST NOT implement the 60-second no-op timer (it would cause hangs in
 long-running server processes and serverless functions).
@@ -1302,14 +1156,14 @@ long-running server processes and serverless functions).
 Instead, non-Node.js SDKs MUST implement `flush()` (see Section 4.6) and MUST document it
 in the SDK README as required before process exit.
 
-### 13.3 Serverless Guidance
+### 12.3 Serverless Guidance
 
 In serverless environments (AWS Lambda, Google Cloud Functions, Vercel Edge Functions, Cloudflare
 Workers, etc.), the runtime reclaims resources when the function handler returns. SDKs MUST
 expose `flush()` and MUST document that callers MUST invoke it before the function handler
 returns to ensure in-flight events are delivered.
 
-### 13.4 `destroy()` vs. `flush()` Clarification
+### 12.4 `destroy()` vs. `flush()` Clarification
 
 These are distinct operations and MUST NOT be conflated:
 
@@ -1320,42 +1174,7 @@ These are distinct operations and MUST NOT be conflated:
 
 ---
 
-## 14. Open Questions
-
-The following questions are tracked but intentionally unresolved in v1. SDK authors SHOULD be
-aware of them.
-
-1. **Inspector API docs availability.** Do public or internal API docs for
-   `https://api.avo.app/inspector/v1/track` exist that the spec should reference as authoritative?
-   This spec was derived from the Node.js reference SDK source. If official docs exist, they
-   should be linked and treated as authoritative over this spec.
-
-2. **Auth and API key handling.** The wire protocol embeds `apiKey` inside the JSON body. There
-   is no `Authorization` header. This is unusual by modern API standards. Open questions:
-   whether this is intentional and permanent; whether a future version will add header-based
-   auth; whether generated SDKs should forward the key as a header as well.
-
-3. **License of generated SDKs.** The spec repo is MIT-licensed. Generated SDKs are derivative
-   works of the spec; the MIT license permits customers to re-license derivatives. This should
-   be explicitly stated in the spec repo's `LICENSE` and `AGENTS.md`. Generated SDKs MAY use
-   any license the customer chooses.
-
-4. **`libPlatform` registered values.** Is there a registry of approved `libPlatform` values,
-   or can implementations choose freely? The backend may use this field for analytics or routing.
-   Confirm with the Inspector backend team. Currently, any non-empty string is acceptable.
-
-5. **Telemetry from generated SDKs.** Should generated SDKs report their own usage to Avo (e.g.,
-   `libPlatform: "ruby-generated"`)? Currently out of scope, but `libPlatform` is the correct
-   hook for this if implemented.
-
-6. **Batching vs. per-event sends.** The wire protocol accepts an array (batch), but spec v1
-   defines only per-event sends (array with exactly one element). A future version MAY define
-   a batching behavior (configurable batch size, time-based flush) as an optional optimization.
-   Current answer: no batching in v1.
-
----
-
-## 15. Out of Scope
+## 13. Out of Scope
 
 The following are explicitly out of scope for spec v1. Implementations MUST NOT include them;
 AI agents generating SDKs MUST NOT add them.
@@ -1364,10 +1183,6 @@ AI agents generating SDKs MUST NOT add them.
   session management — none of these apply to server-side SDKs.
 - **Hosting, publishing, or packaging generated SDKs.** Publishing to RubyGems, PyPI,
   Crates.io, npm, Maven Central, etc. is the customer's responsibility.
-- **Avo Codegen integration specifics.** SDK authors MAY implement `_avoFunctionTrackSchemaFromEvent`
-  but it is not required for minimal conformance.
-- **Event-spec validation.** Validating event properties against Avo event schemas is deferred
-  to spec v2. The validation subsystem (event spec fetcher, cache, validator) MAY be stubbed.
 - **Batching.** Time-based or count-based batching is deferred to v1.1.0. Each event MUST be
   sent as a single-element array.
 - **Telemetry or usage reporting** from generated SDKs.

@@ -85,9 +85,6 @@ paths:
                         propertyType: "string"
                       - propertyName: "trialDays"
                         propertyType: "int"
-                    avoFunction: false
-                    eventId: null
-                    eventHash: null
       responses:
         "200":
           description: |
@@ -162,9 +159,6 @@ components:
         - type
         - eventName
         - eventProperties
-        - avoFunction
-        - eventId
-        - eventHash
       properties:
         apiKey:
           type: string
@@ -223,19 +217,6 @@ components:
           items:
             $ref: "#/components/schemas/EventPropertyPlain"
           description: Extracted schema — array of plain property objects.
-        avoFunction:
-          type: boolean
-          description: "true if sent via _avoFunctionTrackSchemaFromEvent (Codegen path); false for trackSchemaFromEvent."
-        eventId:
-          type:
-            - string
-            - "null"
-          description: Avo Codegen event ID. Must be null when avoFunction is false.
-        eventHash:
-          type:
-            - string
-            - "null"
-          description: Avo Codegen event hash. Must be null when avoFunction is false.
 
     EventPropertyPlain:
       description: |

@@ -14,7 +14,7 @@ The SDK sends analytics event schemas to the Avo Inspector HTTP API at
 `POST https://api.avo.app/inspector/v1/track`. It is server-side only: no browser,
 no localStorage, no session management, no user-facing UI concerns. The SDK MUST
 extract a type schema from arbitrary event property maps and POST that schema to
-the Inspector API, handling sampling, deduplication (optional), and graceful error
+the Inspector API, handling sampling and graceful error
 recovery transparently to the caller.
 
 ---
@@ -39,8 +39,6 @@ Read every file in this order before writing any code. Do not skip files.
    wire-7). Your `trackSchemaFromEvent` implementation MUST pass all of these.
 8. **`conformance/error-handling/fixtures.json`** — Error-handling fixtures. Your implementation
    MUST pass all of these (REQUIRED suite).
-9. **`conformance/deduplication/fixtures.json`** — Deduplication fixtures (OPTIONAL suite).
-   Your implementation SHOULD pass these; they do not block a conformance pass grade.
 
 ---
 
@@ -90,8 +88,8 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 - [ ] Every outgoing request body is a JSON array with exactly one event object (SPEC.md §7.3).
 
   **Required fields (MUST be present in every wire body):**
-  `anonymousId`, `apiKey`, `appName`, `appVersion`, `avoFunction`, `createdAt`, `env`,
-  `eventHash`, `eventId`, `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
+  `anonymousId`, `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
+  `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
   `messageId`, `samplingRate`, `type`.
 
   **Forbidden fields (MUST NOT appear in any wire body):**
@@ -103,8 +101,6 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   (SPEC.md §8.1).
 - [ ] `createdAt` MUST be an ISO 8601 UTC timestamp with millisecond precision
   (e.g., `"2026-05-25T12:00:00.000Z"`). The `.000Z` suffix MUST be present (SPEC.md §7.3.1).
-- [ ] The dedup key formula is `streamId + "\0" + eventName` (null-byte separator).
-  When `streamId` is absent or empty, the key prefix is `""` (SPEC.md §11.3).
 - [ ] Request bodies ≥ 1024 bytes (UTF-8) MUST be gzip-compressed (RFC 1952) whenever a gzip
   implementation is available, with `Content-Encoding: gzip` and `Content-Length` set to the
   compressed length; `Content-Type` stays `application/json`. Fall back to an uncompressed body
@@ -132,10 +128,8 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 - [ ] Non-Node.js SDKs MUST implement `flush(timeoutMs?: number): Promise<void>` (or synchronous
   equivalent). `flush()` MUST resolve (never reject) once all pending sends initiated before
   the call have completed or been abandoned. Default timeout: 10,000 ms (SPEC.md §4.6).
-  This requirement is NOT present in the Node.js reference SDK; it is a new requirement for
-  all non-Node.js implementations.
 - [ ] `flush()` MUST be documented in the SDK README as required before process exit or function
-  handler return (serverless) when events may be in-flight (SPEC.md §3.4, §13.2, §13.3).
+  handler return (serverless) when events may be in-flight (SPEC.md §3.4, §12.2, §12.3).
 
 ### Lifecycle
 
@@ -184,7 +178,6 @@ An SDK is conformant when:
 - All 13 `schema-extraction` suite fixtures pass.
 - All 7 `wire-protocol` suite fixtures pass.
 - All `error-handling` suite fixtures pass.
-- `deduplication` fixtures are OPTIONAL (SHOULD pass; they do not block a conformance grade).
 
 ---
 
@@ -235,8 +228,8 @@ When `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST POST to that URL instead
 ### AC-9 — Complete wire body fields (SPEC.md §7.3)
 
 Every outgoing event object contains all required fields:
-`anonymousId`, `apiKey`, `appName`, `appVersion`, `avoFunction`, `createdAt`, `env`,
-`eventHash`, `eventId`, `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
+`anonymousId`, `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
+`eventName`, `eventProperties`, `libPlatform`, `libVersion`,
 `messageId`, `samplingRate`, `type`.
 `sessionId` and `trackingId` MUST NOT be sent.
 
@@ -277,7 +270,7 @@ When `samplingRate` is `1.0`, all events are sent.
 `samplingRate` is updated from the `samplingRate` field of every successful 200 response.
 Guarded by a lock or atomic primitive in multi-threaded runtimes.
 
-### AC-18 — flush() implemented for non-Node SDKs (SPEC.md §3.4, §4.6, §13.2)
+### AC-18 — flush() implemented for non-Node SDKs (SPEC.md §3.4, §4.6, §12.2)
 
 Non-Node.js SDKs implement `flush()`. It resolves once all pending sends have completed or
 been abandoned. Default timeout: 10,000 ms. It MUST resolve (never reject). Documented in

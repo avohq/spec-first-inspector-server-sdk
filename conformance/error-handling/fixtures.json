@@ -53,10 +53,7 @@
         "samplingRate": 1.0,
         "type": "event",
         "eventName": "Page Viewed",
-        "eventProperties": [],
-        "avoFunction": false,
-        "eventId": null,
-        "eventHash": null
+        "eventProperties": []
       }
     ],
     "expected_promise_outcome": "resolve",

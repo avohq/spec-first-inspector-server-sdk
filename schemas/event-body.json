@@ -17,10 +17,7 @@
     "samplingRate",
     "type",
     "eventName",
-    "eventProperties",
-    "avoFunction",
-    "eventId",
-    "eventHash"
+    "eventProperties"
   ],
   "properties": {
     "apiKey": {
@@ -91,33 +88,7 @@
         "$ref": "event-property-plain.json"
       },
       "description": "Extracted schema — array of plain property objects."
-    },
-    "avoFunction": {
-      "type": "boolean",
-      "description": "true if sent via _avoFunctionTrackSchemaFromEvent (Codegen path); false for trackSchemaFromEvent."
-    },
-    "eventId": {
-      "type": ["string", "null"],
-      "description": "Avo Codegen event ID. Must be null when avoFunction is false."
-    },
-    "eventHash": {
-      "type": ["string", "null"],
-      "description": "Avo Codegen event hash. Must be null when avoFunction is false."
     }
   },
-  "allOf": [
-    {
-      "if": {
-        "properties": { "avoFunction": { "const": false } },
-        "required": ["avoFunction"]
-      },
-      "then": {
-        "properties": {
-          "eventId": { "type": "null" },
-          "eventHash": { "type": "null" }
-        }
-      }
-    }
-  ],
   "additionalProperties": false
 }

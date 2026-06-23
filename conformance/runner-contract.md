@@ -84,10 +84,10 @@ The input envelope is a JSON object with the following fields.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `suite` | string | YES — injected by runner | Suite identifier: `"schema-extraction"`, `"wire-protocol"`, `"deduplication"`, or `"error-handling"`. NOT present in fixture files; the suite runner MUST inject this field from the parent directory name before passing the envelope to the harness. |
+| `suite` | string | YES — injected by runner | Suite identifier: `"schema-extraction"`, `"wire-protocol"`, or `"error-handling"`. NOT present in fixture files; the suite runner MUST inject this field from the parent directory name before passing the envelope to the harness. |
 | `fixture_id` | string | YES | Unique identifier for this fixture (e.g., `"wire-1"`, `"fixture-3"`). MUST be echoed in the output envelope. |
 | `constructor` | object | YES — except `schema-extraction` | Options passed verbatim to the `AvoInspector` constructor. Absent for `schema-extraction` fixtures; the harness MUST NOT require it when `suite` is `"schema-extraction"`. |
-| `operation` | string | YES — except `schema-extraction` | SDK method to invoke: `"extractSchema"`, `"trackSchemaFromEvent"`, or `"_avoFunctionTrackSchemaFromEvent"`. Absent for `schema-extraction` fixtures; the harness MUST call `extractSchema()` directly when `suite` is `"schema-extraction"`. |
+| `operation` | string | YES — except `schema-extraction` | SDK method to invoke: `"extractSchema"` or `"trackSchemaFromEvent"`. Absent for `schema-extraction` fixtures; the harness MUST call `extractSchema()` directly when `suite` is `"schema-extraction"`. |
 | `input` | object | YES | Operation-specific input payload. For `schema-extraction`, the entire `input` object IS the `eventProperties` argument. For other suites, shape depends on `operation` (see below). |
 | `precondition` | object | NO | State to apply to the SDK instance before invoking the operation. See [`precondition`](#precondition). |
 | `mock_response` | object or null | NO | Response configuration for the mock server. Present only when a wire-protocol HTTP call is expected. `null` means no HTTP call is expected. |
@@ -128,19 +128,6 @@ argument (no wrapper object). Consistent with steps 3 and the `input` row above:
 
 `streamId` is optional. When absent, the harness MUST call `trackSchemaFromEvent` without the
 third argument (not with `undefined` explicitly, unless the language requires it).
-
-**`"_avoFunctionTrackSchemaFromEvent"`** — calls
-`inspector._avoFunctionTrackSchemaFromEvent(eventName, eventProperties, eventId, eventHash, streamId?)`:
-
-```json
-{
-  "eventName": "Event Name",
-  "eventProperties": { "key": "value" },
-  "eventId": "avo-event-id",
-  "eventHash": "avo-event-hash",
-  "streamId": "optional-stream-id"
-}
-```
 
 ### `precondition`
 
@@ -198,7 +185,7 @@ The harness MUST write exactly one JSON object to stdout, terminated by a newlin
 |---|---|---|---|
 | `fixture_id` | string | YES | MUST match the `fixture_id` from the input envelope. |
 | `passed` | boolean | YES | `true` if the operation completed without a harness-level error; `false` if the harness itself failed (parse error, constructor throw, unhandled exception). Note: `passed: true` does not mean the fixture assertion passed — the suite runner performs assertions after the harness exits. |
-| `actual` | any | YES | The raw output of the operation. For `extractSchema`: the returned array. For `trackSchemaFromEvent`/`_avoFunctionTrackSchemaFromEvent`: the resolved value (array) or rejection reason (string). |
+| `actual` | any | YES | The raw output of the operation. For `extractSchema`: the returned array. For `trackSchemaFromEvent`: the resolved value (array) or rejection reason (string). |
 | `outcome` | string | YES | `"resolve"` if the promise resolved; `"reject"` if the promise rejected. For synchronous `extractSchema`, always `"resolve"`. |
 | `error` | string or null | YES | `null` on success. On harness error: a string describing the error (e.g., JSON parse failure, constructor validation error thrown). MUST NOT contain the full exception stack trace — use a one-line summary. |
 
@@ -447,8 +434,8 @@ submitting conformance results.
       the mock server URL when this variable is set.
 - [ ] Harness exits with code `0` on success, `1` on a harness/runtime invocation failure
       (never to signal an assertion result), and `2` on configuration/envelope errors.
-- [ ] Harness handles all three `operation` values: `"extractSchema"`,
-      `"trackSchemaFromEvent"`, and `"_avoFunctionTrackSchemaFromEvent"`.
+- [ ] Harness handles both `operation` values: `"extractSchema"` and
+      `"trackSchemaFromEvent"`.
 - [ ] Harness does not persist state between invocations — each run constructs a fresh
       `AvoInspector` instance.
 
@@ -463,8 +450,6 @@ An SDK is considered conformant when:
 - All non-OPTIONAL fixtures in the `schema-extraction` suite pass.
 - All fixtures in the `wire-protocol` suite pass.
 - All fixtures in the `error-handling` suite pass.
-- Fixtures in the `deduplication` suite are OPTIONAL (SHOULD pass). Dedup conformance is
-  strongly recommended but does not block a conformance pass grade.
 
 ### Reporting format
 
@@ -474,7 +459,6 @@ Suite runners SHOULD produce a conformance report with the following structure p
 [PASS] fixture-1 — Basic primitives
 [PASS] wire-1 — Basic event send
 [FAIL] wire-2 — Sampling drop: expected 0 HTTP calls, got 1
-[SKIP] dedup-1 — (deduplication is OPTIONAL)
 ```
 
 ### Versioning

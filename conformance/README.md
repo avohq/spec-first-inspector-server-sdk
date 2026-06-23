@@ -14,9 +14,6 @@ conformance/
   wire-protocol/
     README.md                      (wire protocol suite docs)
     fixtures.json                  (7 golden fixtures: wire-1 through wire-7)
-  deduplication/
-    README.md                      (deduplication suite docs)
-    fixtures.json                  (deduplication fixtures — OPTIONAL suite)
   error-handling/
     README.md                      (error handling suite docs)
     fixtures.json                  (error handling fixtures)
@@ -42,15 +39,6 @@ invoking the harness.
 
 See `wire-protocol/README.md` for details and `wire-protocol/fixtures.json` for the
 machine-readable fixtures (wire-1 through wire-7).
-
-### deduplication
-
-Tests the optional two-bucket deduplication algorithm. These fixtures are **OPTIONAL** (SHOULD
-pass; they do not block a conformance pass grade). Covers single-invocation dedup scenarios;
-cross-bucket multi-step sequences require a custom integration test in the SDK's own test suite.
-
-See `deduplication/README.md` for details and `deduplication/fixtures.json` for the
-machine-readable fixtures.
 
 ### error-handling
 

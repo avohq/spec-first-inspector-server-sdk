@@ -98,7 +98,7 @@ All four fields are **required** on every event sent. A missing field is a confo
 | `fixture_id` | YES | Unique identifier (e.g., `"wire-1"`). |
 | `description` | YES | Human-readable description. |
 | `constructor` | YES | Options passed verbatim to the SDK constructor. |
-| `operation` | YES | SDK method to invoke: `"trackSchemaFromEvent"` or `"_avoFunctionTrackSchemaFromEvent"`. |
+| `operation` | YES | SDK method to invoke: `"trackSchemaFromEvent"`. |
 | `input` | YES | Operation-specific input. `streamId` is optional; when absent, `anonymousId` MUST be `""` in the wire body. |
 | `precondition` | NO | State to establish before invoking the operation. Harness MUST apply `samplingRate` override via internal setter or test hook before calling the operation. |
 | `mock_response` | NO | Response the mock server returns. `null` means no mock server is started (use when no HTTP call is expected). |

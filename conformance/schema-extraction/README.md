@@ -61,9 +61,9 @@ primitive scalar types (`string`, `int`, `float`, `boolean`, `null`, `unknown`).
 
 ### `0.0` Must Be `"float"` (fixture-3)
 
-`0.0` MUST be classified as `"float"`, not `"int"`. This is intentionally different from the
-Node.js reference SDK, which uses `Number.isInteger` and returns `"int"` for `0.0`. Generated
-SDKs in statically-typed languages (Go, Java, Rust, C#, Scala) MUST use the declared/runtime
+`0.0` MUST be classified as `"float"`, not `"int"`. (In JavaScript, where `0.0` and `0` are
+runtime-identical and `Number.isInteger(0.0)` is `true`, SDKs MUST still classify it as `"float"`
+per this spec.) Generated SDKs in statically-typed languages (Go, Java, Rust, C#, Scala) MUST use the declared/runtime
 type: `float32`/`float64`/`double` -> `"float"`; `int`/`int64`/`long` -> `"int"`. In dynamically
 typed languages (Ruby, Python): `Float` -> `"float"`; `Integer` -> `"int"`.
 

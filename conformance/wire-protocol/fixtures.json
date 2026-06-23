@@ -27,10 +27,7 @@
         "eventProperties": [
           { "propertyName": "plan", "propertyType": "string" },
           { "propertyName": "seats", "propertyType": "int" }
-        ],
-        "avoFunction": false,
-        "eventId": null,
-        "eventHash": null
+        ]
       }
     ],
     "expected_promise_outcome": "resolve",
@@ -84,10 +81,7 @@
         "samplingRate": 1.0,
         "type": "event",
         "eventName": "Page Viewed",
-        "eventProperties": [],
-        "avoFunction": false,
-        "eventId": null,
-        "eventHash": null
+        "eventProperties": []
       }
     ],
     "expected_promise_outcome": "resolve",
@@ -118,10 +112,7 @@
         "samplingRate": 1.0,
         "type": "event",
         "eventName": "Page Viewed",
-        "eventProperties": [],
-        "avoFunction": false,
-        "eventId": null,
-        "eventHash": null
+        "eventProperties": []
       }
     ],
     "expected_promise_outcome": "resolve",
@@ -186,10 +177,7 @@
           { "propertyName": "attribute_22", "propertyType": "string" },
           { "propertyName": "attribute_23", "propertyType": "string" },
           { "propertyName": "attribute_24", "propertyType": "string" }
-        ],
-        "avoFunction": false,
-        "eventId": null,
-        "eventHash": null
+        ]
       }
     ],
     "expected_request_headers": { "content-encoding": "gzip" },
@@ -223,10 +211,7 @@
         "eventName": "Small Event",
         "eventProperties": [
           { "propertyName": "plan", "propertyType": "string" }
-        ],
-        "avoFunction": false,
-        "eventId": null,
-        "eventHash": null
+        ]
       }
     ],
     "expected_request_headers": { "content-encoding": null },

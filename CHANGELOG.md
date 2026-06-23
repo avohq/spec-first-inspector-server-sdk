@@ -47,7 +47,6 @@ appears.
 | `conformance/schema-extraction/fixtures.json` | 13 golden schema-extraction fixtures |
 | `conformance/wire-protocol/fixtures.json` | 7 wire-protocol golden fixtures (wire-1 through wire-7) |
 | `conformance/error-handling/fixtures.json` | 3 error-handling fixtures (network timeout, network error, non-200) |
-| `conformance/deduplication/fixtures.json` | 2 deduplication fixtures (OPTIONAL — conformance grade not blocked) |
 | `conformance/runner-contract.md` | Normative stdin/stdout harness protocol |
 
 ### Wire-Protocol Normative Content
@@ -56,7 +55,7 @@ appears.
 - **Request body schema:** JSON array of event objects; required fields:
   `apiKey`, `appName`, `appVersion`, `libVersion`, `env`, `libPlatform`,
   `messageId`, `anonymousId`, `createdAt`, `samplingRate`, `type`,
-  `eventName`, `eventProperties`, `avoFunction`, `eventId`, `eventHash`
+  `eventName`, `eventProperties`
 - **`env` enum values:** `"dev"`, `"staging"`, `"prod"` (exact wire strings)
 - **`libVersion` format:** plain SemVer string (e.g., `"1.2.0"`) — no suffix
 - **`messageId` format:** UUID v4 (`xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`)
@@ -86,14 +85,13 @@ appears.
   fixtures `wire-6` (large body, gzip transparent) and `wire-7` (small body MUST
   be uncompressed), asserted via the new `expected_request_headers` field.
 
-### New Requirements vs. Node.js Reference SDK
+### Runtime Lifecycle Requirements
 
-- **`flush()` requirement (new):** Non-Node.js SDKs MUST implement `flush()`.
-  This method is not present in the Node.js reference SDK, which uses a 60-second
-  keepalive timer instead. Non-Node.js runtimes MUST NOT use the keepalive timer
-  approach (it causes hangs); they MUST expose `flush()` and document it as
-  required before process or function-handler exit. Default timeout: 10,000 ms.
-  `flush()` MUST resolve (not reject) in all cases. See SPEC.md §4.6 and §13.
+- **`flush()` requirement:** Non-Node.js SDKs MUST implement `flush()`. Node.js SDKs
+  use a 60-second keepalive timer instead; non-Node.js runtimes MUST NOT use the
+  keepalive-timer approach (it causes hangs) — they MUST expose `flush()` and
+  document it as required before process or function-handler exit. Default timeout:
+  10,000 ms. `flush()` MUST resolve (not reject) in all cases. See SPEC.md §4.6 and §12.
 
 ### Spec Design Intents
 
@@ -101,14 +99,10 @@ appears.
   MUST return `"float"` for a float-zero value (`0.0`). In statically-typed
   languages (Go, Java, Rust, C#), the declared type is authoritative: `float64(0.0)`
   → `"float"`. In JavaScript, `0.0` and `0` are runtime-identical; the spec
-  intentionally requires `"float"` here, which differs from the Node.js reference
-  SDK output of `"int"` for `Number.isInteger(0.0) == true`. This is a forward-looking
-  requirement for generated SDKs in languages where `0.0` and `0` are genuinely
-  distinct types. See SPEC.md §9.3.1.
+  intentionally requires `"float"` here. This is a forward-looking requirement for
+  generated SDKs in languages where `0.0` and `0` are genuinely distinct types.
+  See SPEC.md §9.3.1.
 
 ### Optional Features
 
-- **Deduplication:** OPTIONAL; 500 ms window, per-stream keying, two-bucket
-  (manual vs. Codegen) algorithm. Conformance fixtures are OPTIONAL and do not
-  block a conformance grade.
 - **Encryption:** opt-in; ECIES P-256; applies in dev/staging only.
