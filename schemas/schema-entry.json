@@ -24,7 +24,6 @@
         "list(float)",
         "list(boolean)",
         "list(object)",
-        "list(null)",
         "unknown"
       ],
       "description": "The classified type of the property value."
@@ -64,7 +63,7 @@
       "if": {
         "properties": {
           "propertyType": {
-            "enum": ["object", "list(string)", "list(int)", "list(float)", "list(boolean)", "list(object)", "list(null)"]
+            "enum": ["object", "list(string)", "list(int)", "list(float)", "list(boolean)", "list(object)"]
           }
         },
         "required": ["propertyType"]

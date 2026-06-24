@@ -19,7 +19,7 @@ conformance/
     fixtures.json                  (error handling fixtures)
   batching/
     README.md                      (batching suite docs)
-    fixtures.json                  (5 golden fixtures: batch-1 through batch-5)
+    fixtures.json                  (6 golden fixtures: batch-1 through batch-6)
 ```
 
 ## Suites
@@ -85,18 +85,18 @@ asserts the resulting HTTP calls — see [`batching/README.md`](./batching/READM
 wire-protocol fixtures (`wire-1`–`wire-7`, `env: "dev"`) additionally cover the immediate-send
 (`batchSize == 1`) path, and `wire-8` covers buffered-not-sent.
 
-**Automated by the `batching` suite** (`batch-1`–`batch-5`): size-trigger flush, `flush()` drain of a
-partial batch, `destroy()` discard, `maxQueueSize` FIFO overflow, mixed-stream batches, and non-200
-no-requeue.
+**Automated by the `batching` suite** (`batch-1`–`batch-6`): size-trigger flush, `flush()` drain of a
+partial batch, `destroy()` discard, `maxQueueSize` FIFO overflow, mixed-stream batches, non-200
+no-requeue, and concurrent enqueue+flush atomic swap-and-clear (`batch-6`, via the `trackN` fan-out).
 
-The following behaviors are not yet expressible as deterministic single-process fixtures and MUST be
-verified manually (or via the SDK's own integration tests):
+The following **SHOULD-level** behaviors are not automated as deterministic single-process fixtures
+and MUST be verified manually (or via the SDK's own integration tests). Concurrency — a MUST — is now
+automated by `batch-6`:
 
 | Scenario | Expectation |
 |---|---|
-| Track 1 event, wait > `batchFlushSeconds` | The scheduled/idle flush sends the partial batch (long-running, non-serverless); needs a controllable clock |
-| Send fails transiently (network/timeout) | Batch re-queued at the front; retried on next flush; `messageId` unchanged; needs the mock to simulate a dropped connection |
-| Concurrent enqueue + flush | No lost, duplicated, or torn events (atomic swap-and-clear); needs real concurrency |
+| Track 1 event, wait > `batchFlushSeconds` (§12.3, SHOULD) | The scheduled/idle flush sends the partial batch (long-running, non-serverless); needs a controllable clock |
+| Send fails transiently (network/timeout) (§12.5, SHOULD) | Batch re-queued at the front; retried on next flush; `messageId` unchanged; needs the mock to simulate a dropped connection |
 
 ## Out of Scope in v1
 

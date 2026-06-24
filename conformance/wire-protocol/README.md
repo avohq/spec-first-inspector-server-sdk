@@ -21,7 +21,7 @@ and correctly handles `streamId` edge cases.
 > (`batchSize == 1`) batching path, and `wire-8` covers buffered-not-sent. Multi-event batching
 > (size-trigger flush, `flush()` drain, `destroy()` discard, `maxQueueSize` overflow, non-200
 > no-requeue) is automated by the dedicated [`batching` suite](../batching/README.md); the few
-> remaining behaviors (time/idle flush, transient re-queue, concurrency) are in the manual matrix in
+> remaining SHOULD-level behaviors (time/idle flush, transient re-queue) are in the manual matrix in
 > [`../README.md`](../README.md).
 
 ## How It Works

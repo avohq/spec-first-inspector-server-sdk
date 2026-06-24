@@ -44,6 +44,7 @@ appears.
 | `conformance/schema-extraction/fixtures.json` | 13 golden schema-extraction fixtures |
 | `conformance/wire-protocol/fixtures.json` | 8 wire-protocol golden fixtures (wire-1 through wire-8) |
 | `conformance/error-handling/fixtures.json` | 3 error-handling fixtures (samplingRate boundary, non-200, empty properties) |
+| `conformance/batching/fixtures.json` | 6 batching golden fixtures (batch-1 through batch-6; `sequence` mode, including the `batch-6` `trackN` concurrency fan-out) |
 | `conformance/runner-contract.md` | Normative stdin/stdout harness protocol |
 
 ### Wire-Protocol Normative Content
@@ -99,8 +100,11 @@ appears.
   `maxQueueSize` FIFO-drops oldest and logs the drop count; transient failures re-queue at the front
   while a non-200 does not (and `messageId` is never mutated on re-queue); `trackSchemaFromEvent`
   resolves with the extracted schema at enqueue. `Content-Type` stays `application/json` and gzip
-  applies to the assembled batch body. See SPEC.md §12 and conformance fixture `wire-8`
-  (no-premature-flush) plus the manual batching matrix in `conformance/README.md`.
+  applies to the assembled batch body. See SPEC.md §12, the `batching` suite (`batch-1`–`batch-6`,
+  including the `batch-6` `trackN` concurrency fan-out that automates the §3.1/§12.4 atomic
+  swap-and-clear MUST), conformance fixture `wire-8` (no-premature-flush), and the manual matrix in
+  `conformance/README.md` for the two remaining SHOULD-level behaviors (time/idle flush §12.3,
+  transient re-queue §12.5).
 
 ### Runtime Lifecycle Requirements
 
@@ -113,10 +117,18 @@ appears.
 
 ### Spec Design Intents
 
-- **`0.0` → `"float"` (design intent):** The `getBasicPropType` classification
-  MUST return `"float"` for a float-zero value (`0.0`). In statically-typed
-  languages (Go, Java, Rust, C#), the declared type is authoritative: `float64(0.0)`
-  → `"float"`. In JavaScript, `0.0` and `0` are runtime-identical; the spec
-  intentionally requires `"float"` here. This is a forward-looking requirement for
-  generated SDKs in languages where `0.0` and `0` are genuinely distinct types.
-  See SPEC.md §9.3.1.
+- **`0.0` → `"float"` (statically-typed languages only):** `getBasicPropType` classifies a
+  float-zero value (`0.0`) as `"float"` **only** in statically-typed languages (Go, Java, Rust,
+  C#, Scala), where the declared type is authoritative (`float64(0.0)` → `"float"`). In
+  JavaScript/TypeScript, `0.0` and `0` are runtime-identical and the canonical reference parser
+  (`node-avo-inspector`) emits `"int"` for any whole-valued float; JS/TS SDKs MAY emit `"int"`.
+  Float-zero is intentionally **excluded** from the universal `schema-extraction` fixtures so the
+  reference SDK stays conformant. See SPEC.md §9.3.1.
+- **`propertyType` enum — no `list(null)`:** `list(null)` is **not** a valid `propertyType`. The
+  reference parser can never emit it (a null-first or empty list defaults to `list(string)`), and
+  the Inspector backend has no null list type (it degrades `list(null)` to `list(any)`).
+  `list(object)` covers both arrays of objects and nested arrays. See SPEC.md §7.3.4 and §9.3.4.
+- **Unknown wire fields are ignored, not rejected:** the event body forbids only `sessionId` and
+  `trackingId`; other unknown top-level fields are permitted (the Inspector write API reads only
+  the fields it needs and never rejects extras). `schemas/event-body.json` therefore no longer
+  sets `additionalProperties: false` — it matches `openapi.yaml`. See SPEC.md §7.3.1.

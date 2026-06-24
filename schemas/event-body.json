@@ -86,5 +86,11 @@
       "description": "Extracted schema — array of plain property objects."
     }
   },
-  "additionalProperties": false
+  "$comment": "Unknown extra fields are permitted — the Inspector backend ignores fields it does not read (write-api consumes only named keys). Only sessionId and trackingId are forbidden (SPEC.md §7.3.1, §13). This matches openapi.yaml EventBody.",
+  "not": {
+    "anyOf": [
+      { "required": ["sessionId"] },
+      { "required": ["trackingId"] }
+    ]
+  }
 }

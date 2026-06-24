@@ -244,7 +244,6 @@ components:
             - list(float)
             - list(boolean)
             - list(object)
-            - list(null)
             - unknown
           description: The classified type of the property value.
         children:

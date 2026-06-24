@@ -493,14 +493,14 @@ The SDK README MUST instruct maintainers to update the version constant on each 
 ```json
 {
   "propertyName": "string",
-  "propertyType": "string | int | float | boolean | null | object | list(string) | list(int) | list(float) | list(boolean) | list(object) | list(null) | unknown",
+  "propertyType": "string | int | float | boolean | null | object | list(string) | list(int) | list(float) | list(boolean) | list(object) | unknown",
   "children": []
 }
 ```
 
 **`children` field normative rule:** `children` MUST be present when `propertyType` is `"object"`
 OR any list type (including `"list(string)"`, `"list(int)"`, `"list(float)"`, `"list(boolean)"`,
-`"list(null)"`, `"list(object)"`). `children` MUST be absent for all primitive scalar types
+`"list(object)"`). `children` MUST be absent for all primitive scalar types
 (`"string"`, `"int"`, `"float"`, `"boolean"`, `"null"`, `"unknown"`).
 
 **`children` data structure:** `children` is a JSON array where each element is one of:
@@ -760,7 +760,7 @@ function removeDuplicates(array):
 
 | Input value | Expected `propertyType` |
 |---|---|
-| `0.0` (float zero) | `"float"` |
+| `0.0` (float zero) | `"float"` in statically-typed languages; **not asserted for JS/TS** — the JS reference parser emits `"int"` (see §9.3.1) |
 | `0` (integer zero) | `"int"` |
 | `""` (empty string) | `"string"` |
 | `false` | `"boolean"` |
@@ -771,39 +771,51 @@ function removeDuplicates(array):
 
 #### 9.3.1 Float vs. Integer Distinction
 
-**In statically-typed languages** (Go, Java, Rust, C#, Scala): use the declared/runtime type.
-`float32`/`float64`/`double` → `"float"`; `int`/`int32`/`int64`/`long` → `"int"`. The static
-type declaration is authoritative.
+The `int` vs. `float` distinction is **runtime-type dependent**, and the rule deliberately differs
+by language family. Float-zero (`0.0`, `1.0`, and any whole-valued float) is the only contested
+case; non-whole floats (`3.14`, `1.2`) classify as `"float"` everywhere.
 
-**In dynamically-typed languages** (Ruby, Python): use the runtime type. `Float` → `"float"`;
-`Integer`/`Fixnum` → `"int"`. In Python, `isinstance(val, float)` → `"float"`;
+**In statically-typed languages** (Go, Java, Rust, C#, Scala) — `0.0 → "float"` is a **MUST**: use
+the declared/runtime type. `float32`/`float64`/`double` → `"float"`; `int`/`int32`/`int64`/`long`
+→ `"int"`. The static type declaration is authoritative and unambiguous, so a `float64(0.0)` MUST
+classify as `"float"`.
+
+**In dynamically-typed languages with a distinct float runtime type** (Ruby, Python) — `0.0 →
+"float"` is **RECOMMENDED**: use the runtime type where it is reliably available. `Float` →
+`"float"`; `Integer`/`Fixnum` → `"int"`. In Python, `isinstance(val, float)` → `"float"`;
 `isinstance(val, int)` → `"int"`.
 
-**In JavaScript/TypeScript:** `0.0` and `0` are the same value (`typeof` is `"number"` for both).
-`Number.isInteger(0)` returns `true`; `Number.isInteger(0.0)` also returns `true`. Per this spec,
-`0.0` MUST be classified as `"float"`. JS SDK authors MUST document this known deviation: the
-`Number.isInteger` check alone cannot distinguish `0.0` from `0`. The practical rule for
-conformance fixture 3 is:
+**In JavaScript/TypeScript** — `0.0` and `0` are the **same runtime value** (`typeof` is `"number"`
+for both; `Number.isInteger(0.0)` is `true`). The canonical reference parser (`node-avo-inspector`,
+`AvoSchemaParser`) classifies any whole-valued float as `"int"` because `(0.0).toString() === "0"`
+has no decimal point. JS/TS SDKs are therefore **NOT REQUIRED** to classify `0.0` as `"float"` and
+MAY emit `"int"`; matching the reference parser (`"int"`) is conformant.
 
-- If the calling language passes a literal `0.0` and the runtime cannot distinguish it from `0`,
-  the SDK MUST classify it as `"float"` per this spec.
+**Conformance:** the universal `schema-extraction` fixture-3 does **not** include a `0.0` input, so
+the JS/TS reference SDK passes the suite unchanged. The `0.0 → "float"` invariant is verified only
+for statically-typed SDKs (via their own typed test inputs), where it is a MUST.
 
-> **Spec design intent note:** The `0.0` → `"float"` rule is a forward-looking requirement for
-> generated SDKs in statically-typed languages where `0.0` and `0` are genuinely different
-> runtime types. Generated SDKs in statically-typed languages MUST use the declared type.
+> **Spec design intent note:** `0.0 → "float"` is a forward-looking requirement for statically-typed
+> languages where `0.0` and `0` are genuinely different runtime types. It is intentionally **not** a
+> wire-level conformance gate for dynamically-typed SDKs, because their runtime cannot always
+> distinguish the two — and forcing it would make the canonical JS reference SDK non-conformant
+> against its own spec.
 
 #### 9.3.1.1 Parser Configuration Requirements
 
-When a conformance fixture is delivered via JSON stdin (e.g., from the conformance harness), the
-host language's JSON parser MUST be configured to preserve the `int` vs. `float` distinction in
-the literal source. Most default JSON parsers lose this distinction.
+When a conformance fixture is delivered via JSON stdin (e.g., from the conformance harness), a
+statically-typed SDK's JSON parser SHOULD preserve the `int` vs. `float` distinction from the
+literal source where the language requires it (e.g. mapping a JSON `3` to an integer type and a
+JSON `3.14` to a float type). Most default JSON parsers in dynamically-typed languages already
+expose this via the runtime numeric type.
 
-**Normative rule:** For SDKs whose host-language JSON parser conflates `0` and `0.0` by default,
-the conformance harness MUST preserve the literal-source `int` vs. `float` distinction when
-parsing fixture input: `{"d": 0.0}` MUST be parsed such that `d` is treated as a float, not an
-integer. *How* this is achieved is an implementation detail left to the SDK author. The SDK's own
-`extractSchema` method operates on the host language's native types and MUST use the
-declared/runtime type as the authority.
+**Normative rule (statically-typed SDKs):** A statically-typed SDK whose harness materializes JSON
+numbers into declared types MUST preserve the literal-source `int` vs. `float` distinction so that
+a fixture's float literal is treated as a float and an integer literal as an integer. *How* this is
+achieved is an implementation detail left to the SDK author. The SDK's own `extractSchema` method
+operates on the host language's native types and MUST use the declared/runtime type as the
+authority. Note that the universal `schema-extraction` fixtures avoid the only ambiguous case
+(whole-valued floats such as `0.0`); see §9.3.1.
 
 #### 9.3.2 Recursion Depth
 
@@ -834,6 +846,39 @@ MUST NOT silently crash on pathological inputs.
 In practice, `removeDuplicates` ensures that repeated array element types collapse to a single
 occurrence. For example, `["a", "b", "c"]` mapped to `["string", "string", "string"]` deduplicates
 to `["string"]`.
+
+#### 9.3.4 List Element and Null Edge Cases (reference-parser behavior)
+
+The list `propertyType` is `"list(" + getBasicPropType(firstElement) + ")"` — it is determined by
+the **first** element only (see §9.2). The following edge cases describe the behavior of the
+canonical JS/TS reference parser (`node-avo-inspector`, `AvoSchemaParser`). They are documented as
+guidance, not as universal golden fixtures: behaviors that depend on JS runtime typing (e.g. a
+`null` element, a nested array) are reference-parser behaviors, and statically-typed SDKs SHOULD
+follow their own natural type system rather than reproduce a JS-specific quirk.
+
+- **Empty array `[]` → `"list(string)"`** with `children: []`. The empty list defaults to
+  `list(string)` (the first element is `undefined`). The Inspector backend additionally has an
+  internal "empty list" concept and accepts `list(empty)`, but a conformant SDK emits
+  `"list(string)"` for an empty array; the backend treats the SDK's `list(string)` as a concrete
+  string list. There is **no** `list(null)` or `list(empty)` requirement on the SDK.
+
+- **`list(object)` covers two shapes.** `getBasicPropType` returns `"object"` for any non-null
+  object, including a nested array. So both an array of objects (`[{...}, {...}]`) **and** an array
+  whose first element is itself an array (`[[1], [2]]`) classify as `"list(object)"`. In the
+  array-of-objects case, `children` is an array of **per-element** results — one `SchemaEntry[]`
+  per source object — deduplicated only by reference identity, so distinct objects are never merged
+  (this is the shape shown in fixtures 7 and 9). Example: `[[1], [2]]` →
+  `"list(object)"` with `children: [["int"], ["int"]]`.
+
+- **A `null` or `undefined` element inside a list does not produce `"list(null)"`.** `"list(null)"`
+  is not a valid `propertyType` (it is not in the §7.3.4 enum). When a list's first element is
+  `null`/`undefined`, the list still classifies as `"list(string)"` (the empty-list default). The
+  reference parser's `children` for such an element are JS-specific: a `null` element maps to an
+  empty array `[]` (it takes the object branch and has no keys), while an `undefined` element maps
+  to the type string `"null"`. Example (JS reference): `{ "v": [null, 1] }` →
+  `"list(string)"` with `children: [[], "int"]`; `{ "v": [undefined, 1] }` →
+  `"list(string)"` with `children: ["null", "int"]`. Statically-typed SDKs MAY differ here per their
+  own type system; this asymmetry is not a conformance gate.
 
 ---
 
@@ -878,12 +923,11 @@ Note: `undefined` values MUST be treated identically to `null`.
 ```json
 {
   "fixture_id": "fixture-3",
-  "input": { "a": false, "b": 0, "c": "", "d": 0.0, "e": null, "f": {}, "g": [] },
+  "input": { "a": false, "b": 0, "c": "", "e": null, "f": {}, "g": [] },
   "expected": [
     { "propertyName": "a", "propertyType": "boolean" },
     { "propertyName": "b", "propertyType": "int" },
     { "propertyName": "c", "propertyType": "string" },
-    { "propertyName": "d", "propertyType": "float" },
     { "propertyName": "e", "propertyType": "null" },
     { "propertyName": "f", "propertyType": "object", "children": [] },
     { "propertyName": "g", "propertyType": "list(string)", "children": [] }
@@ -891,9 +935,11 @@ Note: `undefined` values MUST be treated identically to `null`.
 }
 ```
 
-Note: `0.0` MUST be `"float"` because the runtime type is float/double. In statically-typed
-languages, use the declared type. In JavaScript, `0.0` is indistinguishable from `0` at runtime;
-JS SDKs MUST classify it as `"float"` per this spec.
+Note: float-zero (`0.0`) is intentionally **not** part of this universal fixture. Classifying `0.0`
+as `"float"` is a statically-typed-language-only invariant — the canonical JS/TS reference parser
+(`node-avo-inspector`) classifies any whole-valued float as `"int"` (`(0.0).toString() === "0"`,
+no decimal point), so a universal `0.0 → "float"` assertion would fail the reference SDK. See
+§9.3.1 for the per-language rule.
 
 ### Fixture 4 — Nested object
 

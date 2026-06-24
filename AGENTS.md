@@ -40,8 +40,8 @@ Read every file in this order before writing any code. Do not skip files.
 8. **`conformance/error-handling/fixtures.json`** — Error-handling fixtures. Your implementation
    MUST pass all of these (REQUIRED suite).
 9. **`conformance/batching/fixtures.json`** — Batching golden fixtures (`batch-1` through
-   `batch-5`), driven via the `operation: "sequence"` multi-event mode. Your batching
-   implementation MUST pass all of these.
+   `batch-6`), driven via the `operation: "sequence"` multi-event mode (including the `batch-6`
+   `trackN` concurrency fan-out). Your batching implementation MUST pass all of these.
 
 ---
 
@@ -79,9 +79,11 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   It MUST NOT throw to the caller (SPEC.md §4.3).
 - [ ] All 13 schema-extraction fixtures pass: `extractSchema` produces the exact `expected`
   output for every fixture in `conformance/schema-extraction/fixtures.json` (SPEC.md §10).
-- [ ] The value `0.0` (float zero) MUST be classified as `"float"`, not `"int"`. In
-  statically-typed languages, use the declared type. In JavaScript, `0.0` is indistinguishable
-  from `0`; the SDK MUST classify it as `"float"` per spec design intent (SPEC.md §9.3.1).
+- [ ] Float-zero classification follows SPEC.md §9.3.1: in statically-typed languages `0.0` MUST be
+  `"float"` (declared type is authoritative). In JavaScript/TypeScript, where `0.0` and `0` are
+  runtime-identical, the SDK MAY emit `"int"` (the canonical reference parser does). `0.0` is
+  intentionally **not** part of the universal `schema-extraction` fixtures, so this is not a
+  fixture-gated requirement for dynamically-typed SDKs (SPEC.md §9.3.1).
 
 ### Wire Protocol
 
@@ -211,12 +213,13 @@ An SDK is conformant when:
 - All 13 `schema-extraction` suite fixtures pass.
 - All 8 `wire-protocol` suite fixtures pass.
 - All `error-handling` suite fixtures pass.
-- All 5 `batching` suite fixtures pass.
+- All 6 `batching` suite fixtures pass.
 
-The `batching` suite (`operation: "sequence"`) automates most multi-event behavior — size-trigger
-flush, `flush()` drain, `destroy()` discard, `maxQueueSize` FIFO overflow, mixed-stream batches, and
-non-200 no-requeue. A few behaviors (time/idle flush, transient-failure re-queue, concurrency) are
-not deterministically expressible as fixtures and are verified via the manual matrix in
+The `batching` suite (`operation: "sequence"`) automates the multi-event MUST behaviors — size-trigger
+flush, `flush()` drain, `destroy()` discard, `maxQueueSize` FIFO overflow, mixed-stream batches,
+non-200 no-requeue, and concurrent enqueue+flush atomic swap-and-clear (`batch-6`, via the `trackN`
+fan-out). The two remaining behaviors are **SHOULD-level** (time/idle flush §12.3, transient-failure
+re-queue §12.5); they are not normative MUSTs and are verified via the manual matrix in
 `conformance/README.md`.
 
 ---
@@ -257,8 +260,9 @@ as a static/package-level variable.
 ### AC-7 — All 13 schema-extraction fixtures pass (SPEC.md §9, §10)
 
 `extractSchema` produces the exact expected output for every fixture in
-`conformance/schema-extraction/fixtures.json`, including `0.0` classified as `"float"` (not
-`"int"`) in fixture-3 (SPEC.md §9.3.1).
+`conformance/schema-extraction/fixtures.json`. (Float-zero `0.0 → "float"` is a statically-typed
+language invariant and is intentionally excluded from the universal fixtures — the JS/TS reference
+parser emits `"int"`; see SPEC.md §9.3.1.)
 
 ### AC-8 — Wire endpoint and HTTPS (SPEC.md §7.1)
 

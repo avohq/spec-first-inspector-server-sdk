@@ -21,13 +21,12 @@
   },
   {
     "fixture_id": "fixture-3",
-    "description": "Empty and falsy values: false->boolean, 0->int, empty string->string, 0.0->float (NOT int), null->null, {}->object with children [], []->list(string) with children []",
-    "input": { "a": false, "b": 0, "c": "", "d": 0.0, "e": null, "f": {}, "g": [] },
+    "description": "Empty and falsy values: false->boolean, 0->int, empty string->string, null->null, {}->object with children [], []->list(string) with children []. NOTE: float-zero (0.0) is intentionally excluded from this universal fixture — classifying 0.0 as 'float' is a statically-typed-language-only invariant (the canonical JS/TS reference parser emits 'int' for whole-valued floats). See SPEC.md §9.3.1.",
+    "input": { "a": false, "b": 0, "c": "", "e": null, "f": {}, "g": [] },
     "expected": [
       { "propertyName": "a", "propertyType": "boolean" },
       { "propertyName": "b", "propertyType": "int" },
       { "propertyName": "c", "propertyType": "string" },
-      { "propertyName": "d", "propertyType": "float" },
       { "propertyName": "e", "propertyType": "null" },
       { "propertyName": "f", "propertyType": "object", "children": [] },
       { "propertyName": "g", "propertyType": "list(string)", "children": [] }

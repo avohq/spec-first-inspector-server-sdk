@@ -167,6 +167,7 @@ Each element of `steps` is one action, executed in order on the same instance:
 | `"track"` | Call `trackSchemaFromEvent(eventName, eventProperties, streamId?)` and await it. Same `eventProperties` / `streamId` semantics as the single-event `trackSchemaFromEvent` mode. |
 | `"flush"` | Call `flush(timeoutMs?)` and await it. |
 | `"destroy"` | Call `destroy()`. |
+| `"trackN"` | Fire `count` (required int ≥ 1) **concurrent** `trackSchemaFromEvent` calls — real threads/goroutines/parallel tasks where the runtime supports it, else concurrently-scheduled awaited tasks — each enqueuing one distinct event named `${eventNamePrefix}${i}` (`i` from `0` to `count-1`) with empty `eventProperties` and the optional `streamId` (default `""`). The harness MUST join/await all `count` calls before the step resolves. Used to assert the atomic swap-and-clear under real concurrency (SPEC.md §3.1, §12.4); see [Concurrency fan-out](#concurrency-fan-out-trackn). |
 
 **Determinism rules (REQUIRED):**
 
@@ -187,12 +188,43 @@ Each element of `steps` is one action, executed in order on the same instance:
 |---|---|
 | `expected_request_count` | The number of HTTP POSTs captured MUST equal this value. |
 | `expected_request_bodies` | An ordered array of expected batch bodies; each element is itself an array of event objects (one batch = one HTTP call). Each event is format-validated for placeholder fields (`<uuid-v4>`, `<iso8601>`, `<semver>`, `<sdk-platform>`) exactly as in the wire-protocol suite. Batches MUST match in order. |
+| `expected_event_union_count` | The total number of event objects across **all** captured batches (order-independent union) MUST equal this value. Used with `trackN` to assert no events are lost or duplicated under concurrency, where batch boundaries are nondeterministic. |
+| `expected_unique_message_ids` | When `true`, every `messageId` across all captured events MUST be present and **unique** — no duplicates (no event sent twice) and the count of distinct `messageId`s MUST equal `expected_event_union_count`. Together these pin the atomic swap-and-clear invariant (SPEC.md §3.1, §12.4). |
 
 **Output envelope.** For a sequence, `actual` is an array with one entry per step —
-`{ "action": "track"|"flush"|"destroy", "outcome": "resolve"|"reject", "value": <resolved value or rejection reason> }`
+`{ "action": "track"|"trackN"|"flush"|"destroy", "outcome": "resolve"|"reject", "value": <value or reason> }`
 — and top-level `outcome` is `"resolve"` unless a harness-level error occurred (in which case
 `passed` is `false` and `error` is set). A `destroy` step reports `outcome: "resolve"`,
-`value: null`.
+`value: null`. A `trackN` step reports `outcome: "resolve"`, `value: <count>` once all concurrent
+tracks have joined.
+
+#### Concurrency fan-out (`trackN`)
+
+The `trackN` step exists to assert the **atomic swap-and-clear** requirement (SPEC.md §3.1, §12.4) —
+that under concurrent enqueue and flush, no event is lost, duplicated, or torn — which is a **MUST**
+and cannot be expressed by the serial single-event modes. `trackN` directs the harness to fire
+`count` `trackSchemaFromEvent` calls **concurrently** against the one instance:
+
+- On runtimes with real parallelism (threads, goroutines, JVM/Go/Rust/Ruby-Ractor), the harness MUST
+  dispatch the `count` calls on genuinely concurrent workers and join all of them before the step
+  resolves.
+- On single-threaded async runtimes (Node.js, single-threaded Python asyncio), the harness dispatches
+  all `count` calls as concurrently-scheduled tasks and awaits them together. This exercises
+  interleaving of the enqueue/flush continuations but not true parallelism — an honest limitation
+  recorded in `conformance/README.md`; the assertion below still holds.
+
+Each generated event is named `${eventNamePrefix}${i}` for `i` in `0..count-1`, carries empty
+`eventProperties`, and uses the step's optional `streamId` (default `""`). A following `flush` step
+drains the remainder and awaits all in-flight sends, making the captured-request set final.
+
+**Why the assertion is interleaving-invariant.** The runner asserts over the order-independent
+**union** of all captured batch bodies — `expected_event_union_count` (exactly `count` events total)
+and `expected_unique_message_ids` (`count` distinct `messageId`s, none repeated). A correct atomic
+swap-and-clear produces exactly this union for **every** legal interleaving: each enqueued event
+lands in exactly one batch exactly once. The runner never asserts batch boundaries or arrival order,
+so a conformant SDK always passes regardless of scheduling, and the only way to fail is a genuine
+lost, duplicated, or torn event. Raising `count` well above `batchSize` increases the chance a real
+race is hit during the concurrent enqueue.
 
 ### `precondition`
 
@@ -504,6 +536,9 @@ submitting conformance results.
 - [ ] Harness handles the `"sequence"` operation (batching suite): runs `steps` in order on one
       instance, awaits each `track` / `flush`, performs no implicit flush, and honors per-call
       `mock_responses`.
+- [ ] Harness handles the `"trackN"` sequence action: fires `count` `trackSchemaFromEvent` calls
+      concurrently (real parallelism where the runtime supports it), and joins all of them before
+      resolving the step (batch-6 concurrency fixture).
 - [ ] Harness does not persist state between invocations — each run constructs a fresh
       `AvoInspector` instance.
 
@@ -535,9 +570,11 @@ Suite runners SHOULD produce a conformance report with the following structure p
 The harness contract follows the same versioning policy as the spec (`VERSIONING.md`). The
 contract version is `1.0.0` — the initial publication, which includes the optional batch
 configuration fields (`batchSize`, `batchFlushSeconds`, `maxQueueSize`, `disableBatchTimer`) in the
-`constructor` object. Breaking changes to the input/output envelope schema or exit code semantics
-MUST increment the MAJOR version. Additive fields (new optional input or output fields) MUST
-increment the MINOR version.
+`constructor` object, and the `sequence`-mode actions (`track`, `trackN`, `flush`, `destroy`) with
+the concurrency union assertions (`expected_event_union_count`, `expected_unique_message_ids`).
+Breaking changes to the input/output envelope schema or exit code semantics MUST increment the
+MAJOR version. Additive fields (new optional input or output fields) MUST increment the MINOR
+version.
 
 SDK authors SHOULD record which version of the runner contract their harness implements (e.g.,
 in a `HARNESS_CONTRACT_VERSION` constant or a comment at the top of the harness source file).

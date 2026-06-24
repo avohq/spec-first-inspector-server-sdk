@@ -31,7 +31,7 @@ A `SchemaEntry` is:
 ```json
 {
   "propertyName": "string",
-  "propertyType": "string | int | float | boolean | null | object | list(string) | list(int) | list(float) | list(boolean) | list(null) | list(object) | unknown",
+  "propertyType": "string | int | float | boolean | null | object | list(string) | list(int) | list(float) | list(boolean) | list(object) | unknown",
   "children": []
 }
 ```
@@ -45,7 +45,7 @@ primitive scalar types (`string`, `int`, `float`, `boolean`, `null`, `unknown`).
 |---|---|
 | fixture-1 | Basic primitives: boolean, int, string, float |
 | fixture-2 | Null values |
-| fixture-3 | Empty and falsy values, including `0.0` -> `"float"` (not `"int"`) |
+| fixture-3 | Empty and falsy values (float-zero `0.0` excluded — typed-language-only, see §9.3.1) |
 | fixture-4 | Nested object with children |
 | fixture-5 | Simple list of strings; children deduplication |
 | fixture-6 | Empty array defaults to `list(string)` |
@@ -59,13 +59,23 @@ primitive scalar types (`string`, `int`, `float`, `boolean`, `null`, `unknown`).
 
 ## Critical Notes
 
-### `0.0` Must Be `"float"` (fixture-3)
+### `0.0` → `"float"` is a statically-typed-language invariant (NOT tested by fixture-3)
 
-`0.0` MUST be classified as `"float"`, not `"int"`. (In JavaScript, where `0.0` and `0` are
-runtime-identical and `Number.isInteger(0.0)` is `true`, SDKs MUST still classify it as `"float"`
-per this spec.) Generated SDKs in statically-typed languages (Go, Java, Rust, C#, Scala) MUST use the declared/runtime
-type: `float32`/`float64`/`double` -> `"float"`; `int`/`int64`/`long` -> `"int"`. In dynamically
-typed languages (Ruby, Python): `Float` -> `"float"`; `Integer` -> `"int"`.
+Float-zero is intentionally **excluded** from the universal fixtures. `0.0 → "float"` is a **MUST**
+only for statically-typed languages (Go, Java, Rust, C#, Scala), where the declared type is
+authoritative: `float32`/`float64`/`double` -> `"float"`; `int`/`int64`/`long` -> `"int"`. It is
+**RECOMMENDED** in dynamically-typed languages with a distinct float type (Ruby, Python: `Float` ->
+`"float"`). In **JavaScript/TypeScript**, `0.0` and `0` are the same runtime value and the canonical
+reference parser (`node-avo-inspector`) emits `"int"` for any whole-valued float — so JS/TS SDKs are
+**not required** to emit `"float"` for `0.0`, and matching the reference (`"int"`) is conformant.
+See SPEC.md §9.3.1.
+
+### List Edge Cases (empty list, `list(object)`, null elements)
+
+Empty `[]` → `"list(string)"` with `children: []`. An array of objects **or** an array of arrays →
+`"list(object)"`. `"list(null)"` is **not** a valid `propertyType`. A `null`/`undefined` element
+inside a list is a JS-reference quirk (its child maps to `[]` / `"null"` respectively) and is not a
+conformance gate. See SPEC.md §9.3.4.
 
 ### Null Input Returns `[]` (fixture-8)
 
@@ -84,11 +94,12 @@ Result: `["float", "string", [{"propertyName": "three", "propertyType": "int"}]]
 
 ## Parser Configuration for Fixture Input
 
-When reading fixture input from JSON, some language JSON parsers conflate `0` and `0.0`.
-The harness MUST configure its JSON parser to preserve the `int` vs. `float` distinction
-so that fixture-3's `{"d": 0.0}` input is correctly treated as a float.
+When a statically-typed SDK materializes JSON fixture numbers into declared types, it SHOULD
+preserve the `int` vs. `float` distinction from the literal source (a JSON `3` -> integer, a JSON
+`3.14` -> float). The universal fixtures avoid the only ambiguous case (whole-valued floats such as
+`0.0`; see §9.3.1), so no special parser handling is required to pass this suite.
 
-See **SPEC.md §9.3.1.1** for the per-language parser configuration requirements table.
+See **SPEC.md §9.3.1.1** for the per-language parser configuration guidance.
 
 ## Running Against This Suite
 

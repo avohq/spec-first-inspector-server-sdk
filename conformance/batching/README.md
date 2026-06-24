@@ -18,6 +18,7 @@ mock server and `AVO_INSPECTOR_MOCK_ENDPOINT`.
 | `batch-3` | **`destroy()` discards unsent.** Two buffered events, then `destroy()` → zero HTTP calls. |
 | `batch-4` | **`maxQueueSize` FIFO overflow.** `maxQueueSize: 2`; appending a 3rd event drops the oldest; the flushed batch is `[E2, E3]`. |
 | `batch-5` | **Non-200 is not re-queued.** `batchSize: 2` with per-call `mock_responses` `[500, 200]`; the failed first batch is NOT resent in the second call. |
+| `batch-6` | **Concurrency: atomic swap-and-clear.** `trackN` fires 200 concurrent tracks then `flush()`; the captured union MUST be exactly 200 events with unique `messageId`s (no lost / duplicated / torn events). |
 
 ## How it works
 
@@ -35,17 +36,18 @@ so the harness awaits all in-flight sends before exiting.
 
 ## Conformance Definition
 
-An SDK **passes** the batching suite when all five fixtures pass: the captured request count and the
+An SDK **passes** the batching suite when all six fixtures pass: the captured request count and the
 ordered batch bodies match each fixture's expectations (with format validation applied to placeholder
-fields).
+fields), and the `batch-6` concurrency union assertions hold (exactly K events, unique `messageId`s).
 
 ## Still verified manually
 
-These batching behaviors are not yet expressible as deterministic, single-process fixtures and remain
-in the manual matrix in [`../README.md`](../README.md):
+Concurrent enqueue + flush (atomic swap-and-clear) is now **automated** by `batch-6` via the `trackN`
+fan-out (SPEC.md §3.1 and §12.4 are MUSTs). The following two **SHOULD-level** behaviors remain in the
+manual matrix in [`../README.md`](../README.md) — they are intentionally not automated because they
+are non-normative (SHOULD) and would require test-only hooks beyond the wire protocol:
 
-- **Time / idle flush** (`batchFlushSeconds`) — needs a controllable clock / test-only time hook.
-- **Transient (network/timeout) re-queue at the front** — needs the mock to simulate a dropped
-  connection or timeout rather than an HTTP status.
-- **Concurrent enqueue + flush** — needs real concurrency; not deterministic in a single-threaded
-  harness run.
+- **Time / idle flush** (`batchFlushSeconds`, SPEC.md §12.3 — SHOULD) — needs a controllable clock /
+  test-only time hook.
+- **Transient (network/timeout) re-queue at the front** (SPEC.md §12.5 — SHOULD) — needs the mock to
+  simulate a dropped connection or timeout rather than an HTTP status.

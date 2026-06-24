@@ -108,5 +108,19 @@
       ]
     ],
     "notes": "batchSize 2: E1+E2 trigger the first send (mock returns 500), E3+E4 trigger the second (mock returns 200). A non-200 MUST NOT re-queue (SPEC.md §12.5), so the second batch is [E3, E4] — NOT [E1, E2, E3, E4]. Uses mock_responses for per-call status. flush() awaits both in-flight sends."
+  },
+  {
+    "fixture_id": "batch-6",
+    "description": "Concurrent enqueue + flush atomic swap-and-clear: K concurrent tracks then a flush yield exactly K distinct events across all batches — no lost, duplicated, or torn events.",
+    "constructor": { "apiKey": "test-key", "env": "staging", "version": "1.0.0", "appName": "TestApp", "batchSize": 10 },
+    "operation": "sequence",
+    "steps": [
+      { "action": "trackN", "count": 200, "eventNamePrefix": "C", "streamId": "s1" },
+      { "action": "flush" }
+    ],
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_event_union_count": 200,
+    "expected_unique_message_ids": true,
+    "notes": "MUST-level: concurrency atomicity is a MUST in SPEC.md §3.1 and §12.4. trackN fires count=200 concurrent trackSchemaFromEvent calls (real threads/goroutines/parallel tasks where the runtime supports it; concurrently-scheduled awaited tasks otherwise), each enqueuing one distinct event named C0..C199 with empty eventProperties. With batchSize 10, size-triggered sends fire during the concurrent enqueue; the trailing flush() drains the remainder and awaits all in-flight sends. The runner asserts over the order-independent UNION of all captured batch bodies: exactly 200 events total (expected_event_union_count) and all 200 messageIds present and unique (expected_unique_message_ids). This pass condition is interleaving-invariant — a correct atomic swap-and-clear always yields exactly the K events once each; the only way to fail is a genuinely lost, duplicated, or torn event. (Single-threaded async runtimes exercise concurrent scheduling but not true parallelism; that residual stays in conformance/README.md.)"
   }
 ]
