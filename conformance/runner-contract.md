@@ -467,7 +467,7 @@ Suite runners SHOULD produce a conformance report with the following structure p
 ### Versioning
 
 The harness contract follows the same versioning policy as the spec (`VERSIONING.md`). The
-contract version is `1.1.0` — the `1.1.0` revision additively introduced the optional batch
+contract version is `1.0.0` — the initial publication, which includes the optional batch
 configuration fields (`batchSize`, `batchFlushSeconds`, `maxQueueSize`, `disableBatchTimer`) in the
 `constructor` object. Breaking changes to the input/output envelope schema or exit code semantics
 MUST increment the MAJOR version. Additive fields (new optional input or output fields) MUST
