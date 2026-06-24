@@ -19,7 +19,7 @@
         "env": "dev",
         "libPlatform": "<sdk-platform>",
         "messageId": "<uuid-v4>",
-        "anonymousId": "stream-abc",
+        "streamId": "stream-abc",
         "createdAt": "<iso8601>",
         "samplingRate": 1.0,
         "type": "event",
@@ -58,7 +58,7 @@
   },
   {
     "fixture_id": "wire-4",
-    "description": "streamId containing colon characters is passed through verbatim as anonymousId",
+    "description": "streamId containing colon characters is passed through verbatim as streamId",
     "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
     "operation": "trackSchemaFromEvent",
     "input": {
@@ -76,7 +76,7 @@
         "env": "dev",
         "libPlatform": "<sdk-platform>",
         "messageId": "<uuid-v4>",
-        "anonymousId": "stream:with:colons",
+        "streamId": "stream:with:colons",
         "createdAt": "<iso8601>",
         "samplingRate": 1.0,
         "type": "event",
@@ -85,11 +85,11 @@
       }
     ],
     "expected_promise_outcome": "resolve",
-    "notes": "SDK MUST warn about colon-containing streamId per SPEC.md §4.2 (streamId rules), but MUST still send the event with the verbatim streamId value. The colon is not a fatal error — anonymousId must be 'stream:with:colons' exactly as provided."
+    "notes": "SDK MUST warn about colon-containing streamId per SPEC.md §4.2 (streamId rules), but MUST still send the event with the verbatim streamId value. The colon is not a fatal error — streamId must be 'stream:with:colons' exactly as provided."
   },
   {
     "fixture_id": "wire-5",
-    "description": "Empty string streamId is treated as no stream ID; anonymousId becomes empty string",
+    "description": "Empty string streamId is treated as no stream ID; streamId becomes empty string",
     "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
     "operation": "trackSchemaFromEvent",
     "input": {
@@ -107,7 +107,7 @@
         "env": "dev",
         "libPlatform": "<sdk-platform>",
         "messageId": "<uuid-v4>",
-        "anonymousId": "",
+        "streamId": "",
         "createdAt": "<iso8601>",
         "samplingRate": 1.0,
         "type": "event",
@@ -116,7 +116,7 @@
       }
     ],
     "expected_promise_outcome": "resolve",
-    "notes": "Empty streamId MUST be treated as 'no stream ID' per SPEC.md §4.2 (streamId rules) and §8.2. The anonymousId field in the wire body MUST be the empty string ''."
+    "notes": "Empty streamId MUST be treated as 'no stream ID' per SPEC.md §4.2 (streamId rules) and §8.2. The streamId field in the wire body MUST be the empty string ''."
   },
   {
     "fixture_id": "wire-6",
@@ -147,7 +147,7 @@
         "env": "dev",
         "libPlatform": "<sdk-platform>",
         "messageId": "<uuid-v4>",
-        "anonymousId": "stream-large",
+        "streamId": "stream-large",
         "createdAt": "<iso8601>",
         "samplingRate": 1.0,
         "type": "event",
@@ -204,7 +204,7 @@
         "env": "dev",
         "libPlatform": "<sdk-platform>",
         "messageId": "<uuid-v4>",
-        "anonymousId": "stream-small",
+        "streamId": "stream-small",
         "createdAt": "<iso8601>",
         "samplingRate": 1.0,
         "type": "event",

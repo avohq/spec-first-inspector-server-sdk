@@ -5,7 +5,7 @@ info:
     HTTP wire protocol for the Avo Inspector server-side SDK.
 
     POST /inspector/v1/track accepts a JSON array of one or more event objects (a single event
-    when batching is inactive, multiple when a batch is flushed — see SPEC.md Section 13).
+    when batching is inactive, multiple when a batch is flushed — see SPEC.md Section 12).
     Authentication is carried inside the JSON body via the `apiKey` field — there is no
     Authorization header.
 
@@ -36,7 +36,7 @@ paths:
 
         The request body MUST be a JSON array of one or more event objects. A single
         `trackSchemaFromEvent` call enqueues one event; the array carries multiple events when a
-        batch is flushed (see SPEC.md Section 13). In `dev` (where batchSize is forced to 1) each
+        batch is flushed (see SPEC.md Section 12). In `dev` (where batchSize is forced to 1) each
         call sends a single-element array.
 
         The SDK MUST apply a 10-second timeout to every call.
@@ -48,7 +48,7 @@ paths:
         length. `Content-Type` remains `application/json` for server SDKs regardless of
         compression. Falling back to an uncompressed body is allowed only when the body is
         < 1024 bytes, no gzip implementation is available, or compression fails; the backend
-        accepts both compressed and uncompressed bodies. See SPEC.md §7.3.7.
+        accepts both compressed and uncompressed bodies. See SPEC.md §7.3.5.
       parameters:
         - name: Content-Encoding
           in: header
@@ -69,7 +69,7 @@ paths:
               $ref: "#/components/schemas/EventBatch"
             examples:
               plainEvent:
-                summary: Plain (unencrypted) event
+                summary: Example event
                 value:
                   - apiKey: "MY_API_KEY"
                     appName: "my-app"
@@ -78,7 +78,7 @@ paths:
                     env: "dev"
                     libPlatform: "ruby"
                     messageId: "550e8400-e29b-41d4-a716-446655440000"
-                    anonymousId: ""
+                    streamId: ""
                     createdAt: "2026-05-25T12:00:00.000Z"
                     samplingRate: 1.0
                     type: "event"
@@ -132,7 +132,7 @@ components:
       description: |
         The top-level request body for POST /inspector/v1/track.
         An array of one or more event objects (a single event when batching is inactive,
-        e.g. env dev; multiple when a batch is flushed — see SPEC.md Section 13).
+        e.g. env dev; multiple when a batch is flushed — see SPEC.md Section 12).
       type: array
       minItems: 1
       items:
@@ -140,7 +140,7 @@ components:
 
     EventBody:
       description: |
-        A single event object in the Inspector v1 track request body (plain, no encryption).
+        A single event object in the Inspector v1 track request body.
         type must be 'event'. See schemas/event-body.json for the JSON Schema definition.
       type: object
       # SPEC.md §7.3.1: trackingId and sessionId MUST NOT be sent in v1.
@@ -156,7 +156,7 @@ components:
         - env
         - libPlatform
         - messageId
-        - anonymousId
+        - streamId
         - createdAt
         - samplingRate
         - type
@@ -193,7 +193,7 @@ components:
           type: string
           pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
           description: UUID v4, unique per event.
-        anonymousId:
+        streamId:
           type: string
           description: Caller-supplied streamId, or empty string if none provided.
         createdAt:
@@ -205,9 +205,6 @@ components:
           minimum: 0.0
           maximum: 1.0
           description: "Current sampling rate [0.0, 1.0]. Initial value 1.0."
-        publicEncryptionKey:
-          type: string
-          description: P-256 public key in hex. Present only when provided at constructor time.
         type:
           type: string
           const: event
@@ -223,8 +220,7 @@ components:
 
     EventPropertyPlain:
       description: |
-        A plain (unencrypted) event property schema entry.
-        Used in eventProperties when encryption is inactive.
+        An event property schema entry used in eventProperties.
         See schemas/event-property-plain.json and schemas/schema-entry.json.
       type: object
       required:

@@ -67,7 +67,7 @@ to stdout, and exits with code `0` (pass), `1` (fail), or `2` (harness config er
 
 ## Batching
 
-Batching is part of the v1 contract (SPEC.md §13). It cannot be fully automated under the
+Batching is part of the v1 contract (SPEC.md §12). It cannot be fully automated under the
 single-invocation harness, which cannot enqueue events across calls or model "track N events → one
 batched send." Automated coverage is therefore limited to:
 
@@ -87,11 +87,11 @@ The remaining batching behaviors MUST be verified manually (or via the SDK's own
 | Buffer exceeds `maxQueueSize` | Oldest events dropped (FIFO); drop count logged (no contents) |
 | Send fails transiently (network/timeout) | Batch re-queued at the front; retried on next flush; `messageId` unchanged |
 | Send returns non-200 | Batch NOT re-queued; status logged |
-| Batch mixes `streamId`/`eventName` | Each event self-contained; `anonymousId`/`eventName` per element |
+| Batch mixes `streamId`/`eventName` | Each event self-contained; `streamId`/`eventName` per element |
 | Concurrent enqueue + flush | No lost, duplicated, or torn events (atomic swap-and-clear) |
 
 ## Out of Scope in v1
 
-- **Persistent / durable queuing.** The pending batch buffer is in-memory only (SPEC.md §3.2, §13.6);
+- **Persistent / durable queuing.** The pending batch buffer is in-memory only (SPEC.md §3.2, §12.6);
   writing it to disk or any persistent store, and cross-process or cross-restart batch durability,
   are out of scope and MUST NOT be implemented.

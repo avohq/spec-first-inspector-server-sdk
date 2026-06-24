@@ -10,11 +10,11 @@ and correctly handles `streamId` edge cases.
 | `wire-1` | Basic event send — happy path with primitive properties |
 | `wire-2` | Sampling drop — `samplingRate = 0.0` produces zero HTTP calls |
 | `wire-3` | Non-200 response — SDK resolves (does not reject) |
-| `wire-4` | `streamId` with colons — verbatim passthrough as `anonymousId` (spec Edge Case 9) |
-| `wire-5` | Empty `streamId` — `anonymousId` becomes `""` (spec Edge Case 10) |
-| `wire-6` | Large body (≥ 1024 bytes) — MUST be gzip-compressed on any gzip-capable runtime (SPEC.md §7.3.7); transparent after gunzip |
+| `wire-4` | `streamId` with colons — verbatim passthrough as `streamId` (spec Edge Case 9) |
+| `wire-5` | Empty `streamId` — `streamId` becomes `""` (spec Edge Case 10) |
+| `wire-6` | Large body (≥ 1024 bytes) — MUST be gzip-compressed on any gzip-capable runtime (SPEC.md §7.3.5); transparent after gunzip |
 | `wire-7` | Small body (< 1024 bytes) — MUST be sent uncompressed (no `Content-Encoding` header) |
-| `wire-8` | Batching — `env: staging` + `batchSize: 30`; one tracked event is buffered, not sent (0 HTTP calls before flush) (SPEC.md §13) |
+| `wire-8` | Batching — `env: staging` + `batchSize: 30`; one tracked event is buffered, not sent (0 HTTP calls before flush) (SPEC.md §12) |
 
 > **Batching coverage.** The existing `dev` fixtures (`wire-1`–`wire-7`, all `env: "dev"`) run with
 > `batchSize` forced to 1, so they also serve as the automated check for the immediate-send
@@ -40,7 +40,7 @@ instead of `https://api.avo.app`. The mock server:
 After the harness exits, the suite runner calls `GET /requests` and compares the captured request bodies
 against `expected_request_body` in the fixture.
 
-When a recorded request carries `Content-Encoding: gzip` (SPEC.md §7.3.7), the mock server MUST gunzip the
+When a recorded request carries `Content-Encoding: gzip` (SPEC.md §7.3.5), the mock server MUST gunzip the
 raw body bytes before parsing the JSON, so the captured `body` is always the decompressed event array. A
 `gzip`-labeled body that fails to gunzip is a conformance failure.
 
@@ -107,7 +107,7 @@ All four fields are **required** on every event sent. A missing field is a confo
 | `description` | YES | Human-readable description. |
 | `constructor` | YES | Options passed verbatim to the SDK constructor. |
 | `operation` | YES | SDK method to invoke: `"trackSchemaFromEvent"`. |
-| `input` | YES | Operation-specific input. `streamId` is optional; when absent, `anonymousId` MUST be `""` in the wire body. |
+| `input` | YES | Operation-specific input. `streamId` is optional; when absent, `streamId` MUST be `""` in the wire body. |
 | `precondition` | NO | State to establish before invoking the operation. Harness MUST apply `samplingRate` override via internal setter or test hook before calling the operation. |
 | `mock_response` | NO | Response the mock server returns. `null` means no mock server is started (use when no HTTP call is expected). |
 | `expected_request_body` | NO | Array of expected JSON request bodies. Use when one or more HTTP calls are expected. |
@@ -135,15 +135,15 @@ An SDK **passes** the wire-protocol suite when all 8 fixtures pass:
   expected body (with format validation applied to placeholder fields).
 - `wire-2`: The harness exits with code `0` and the mock server recorded exactly 0 requests.
 - `wire-3`: The harness exits with code `0` (promise resolved, not rejected).
-- `wire-4`: The harness exits with code `0` and the mock server recorded a request with `anonymousId`
+- `wire-4`: The harness exits with code `0` and the mock server recorded a request with `streamId`
   equal to `"stream:with:colons"` exactly.
-- `wire-5`: The harness exits with code `0` and the mock server recorded a request with `anonymousId` equal to `""` exactly.
+- `wire-5`: The harness exits with code `0` and the mock server recorded a request with `streamId` equal to `""` exactly.
 - `wire-6`: The harness exits with code `0` and the mock server recorded exactly 1 request carrying
   `Content-Encoding: gzip` whose gunzipped body matches the expected body. A `gzip`-labeled body that fails
   to gunzip is a failure. (An SDK on a runtime with no gzip implementation is exempt from the header
-  assertion per SPEC.md §7.3.7 and MUST document the limitation; it must still send a correct uncompressed body.)
+  assertion per SPEC.md §7.3.5 and MUST document the limitation; it must still send a correct uncompressed body.)
 - `wire-7`: The harness exits with code `0` and the mock server recorded exactly 1 request with **no**
   `Content-Encoding` header (the body is below the 1024-byte gzip threshold, so it MUST be sent uncompressed).
 - `wire-8`: The harness exits with code `0`, the promise resolves, and the mock server recorded **0**
   requests — with `env: "staging"` and `batchSize: 30`, a single tracked event is buffered (below the
-  size threshold) and MUST NOT be sent before a flush (SPEC.md §13.3).
+  size threshold) and MUST NOT be sent before a flush (SPEC.md §12.3).

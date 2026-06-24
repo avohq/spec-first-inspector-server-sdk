@@ -34,15 +34,13 @@ appears.
 
 | Artifact | Description |
 |---|---|
-| `SPEC.md` | Full normative prose specification (RFC 2119 language, 14 sections) |
+| `SPEC.md` | Full normative prose specification (RFC 2119 language, 13 sections) |
 | `AGENTS.md` | AI-agent SDK generation guide: checklist, reading order, conformance, definition of done (25 ACs) |
 | `openapi.yaml` | OpenAPI 3.1 document for the Inspector HTTP API |
 | `schemas/base-body.json` | JSON Schema: base request body fields |
 | `schemas/event-batch.json` | JSON Schema: top-level request array |
-| `schemas/event-body.json` | JSON Schema: plain event body |
-| `schemas/event-body-encrypted.json` | JSON Schema: encrypted event body |
-| `schemas/event-property-plain.json` | JSON Schema: plain property object |
-| `schemas/event-property-encrypted.json` | JSON Schema: encrypted property object |
+| `schemas/event-body.json` | JSON Schema: event body |
+| `schemas/event-property-plain.json` | JSON Schema: property object |
 | `schemas/schema-entry.json` | JSON Schema: schema extraction entry |
 | `conformance/schema-extraction/fixtures.json` | 13 golden schema-extraction fixtures |
 | `conformance/wire-protocol/fixtures.json` | 8 wire-protocol golden fixtures (wire-1 through wire-8) |
@@ -54,7 +52,7 @@ appears.
 - **Endpoint:** `POST https://api.avo.app/inspector/v1/track`
 - **Request body schema:** JSON array of event objects; required fields:
   `apiKey`, `appName`, `appVersion`, `libVersion`, `env`, `libPlatform`,
-  `messageId`, `anonymousId`, `createdAt`, `samplingRate`, `type`,
+  `messageId`, `streamId`, `createdAt`, `samplingRate`, `type`,
   `eventName`, `eventProperties`
 - **`env` enum values:** `"dev"`, `"staging"`, `"prod"` (exact wire strings)
 - **`libVersion` format:** plain SemVer string (e.g., `"1.2.0"`) — no suffix
@@ -71,8 +69,8 @@ appears.
 - **Constructor validation:** throw on missing/whitespace `apiKey` or `version`
   with exact error message strings
 - **`enableLogging` scope:** process-wide (class-level), not per-instance
-- **`destroy()` contract:** terminal — resets `pendingCount` to 0, clears the keepalive and
-  scheduled-flush timers, discards the pending batch unsent; a subsequent `trackSchemaFromEvent()`
+- **`destroy()` contract:** terminal — resets `pendingCount` to 0, clears the scheduled-flush
+  timer, discards the pending batch unsent; a subsequent `trackSchemaFromEvent()`
   is a no-op returning `Promise.resolve([])`
 - **gzip request compression (mandatory when feasible):** On any gzip-capable
   runtime, SDKs MUST gzip-compress (RFC 1952) request bodies whose serialized
@@ -83,7 +81,7 @@ appears.
   bodies, a runtime with no gzip implementation, or a compression error — not by
   choice; a no-gzip runtime MUST document the limitation. Ported from the JS Inspector SDK
   ([avohq/js-avo-inspector#212](https://github.com/avohq/js-avo-inspector/pull/212)),
-  adapted for server-side runtimes. See SPEC.md §7.2 and §7.3.7; conformance
+  adapted for server-side runtimes. See SPEC.md §7.2 and §7.3.5; conformance
   fixtures `wire-6` (large body, gzip transparent) and `wire-7` (small body MUST
   be uncompressed), asserted via the new `expected_request_headers` field.
 
@@ -95,25 +93,24 @@ appears.
   `batchSize` 30, `batchFlushSeconds` 30; **`env == "dev"` forces `batchSize = 1`** (immediate send).
   New OPTIONAL constructor options: `batchSize`, `batchFlushSeconds`, `maxQueueSize` (default 1000),
   `disableBatchTimer`. `EventBatch` `maxItems` cap removed (`minItems: 1` retained) — the body is now
-  an array of one or more self-contained event objects that MAY mix `anonymousId`/`eventName`.
+  an array of one or more self-contained event objects that MAY mix `streamId`/`eventName`.
 - **Server-nature divergences (not the browser behavior):** buffer is in-memory only and never
   persisted (at-most-once; lost on crash/exit-without-flush); the buffer is synchronized (atomic
   swap-and-clear, no HTTP send under the lock); sampling is per event at enqueue (not whole-batch);
   `maxQueueSize` FIFO-drops oldest and logs the drop count; transient failures re-queue at the front
   while a non-200 does not (and `messageId` is never mutated on re-queue); `trackSchemaFromEvent`
   resolves with the extracted schema at enqueue. `Content-Type` stays `application/json` and gzip
-  applies to the assembled batch body. See SPEC.md §13 and conformance fixture `wire-8`
+  applies to the assembled batch body. See SPEC.md §12 and conformance fixture `wire-8`
   (no-premature-flush) plus the manual batching matrix in `conformance/README.md`.
 
 ### Runtime Lifecycle Requirements
 
-- **`flush()` requirement:** Non-Node.js SDKs MUST implement `flush()`. Node.js SDKs
-  use a 60-second keepalive timer instead; non-Node.js runtimes MUST NOT use the
-  keepalive-timer approach (it causes hangs) — they MUST expose `flush()` and
-  document it as required before process or function-handler exit. `flush()` MUST
-  **force-flush the pending batch** (send all buffered events) and then await completion.
-  Default timeout: 10,000 ms. `flush()` MUST resolve (not reject) in all cases. See SPEC.md §4.6,
-  §12, and §13.6.
+- **`flush()` requirement:** All SDKs MUST implement `flush()`, regardless of target runtime —
+  there is no runtime-specific keepalive timer. The SDK MUST NOT rely on holding the host process
+  open by itself to deliver events; callers MUST `flush()` (or `await` the returned promise) before
+  process or function-handler exit. `flush()` MUST **force-flush the pending batch** (send all
+  buffered events) and then await completion. Default timeout: 10,000 ms. `flush()` MUST resolve
+  (not reject) in all cases. See SPEC.md §4.6, §11, and §12.6.
 
 ### Spec Design Intents
 
@@ -124,7 +121,3 @@ appears.
   intentionally requires `"float"` here. This is a forward-looking requirement for
   generated SDKs in languages where `0.0` and `0` are genuinely distinct types.
   See SPEC.md §9.3.1.
-
-### Optional Features
-
-- **Encryption:** opt-in; ECIES P-256; applies in dev/staging only.

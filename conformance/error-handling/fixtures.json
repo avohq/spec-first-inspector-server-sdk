@@ -48,7 +48,7 @@
         "env": "dev",
         "libPlatform": "<sdk-platform>",
         "messageId": "<uuid-v4>",
-        "anonymousId": "",
+        "streamId": "",
         "createdAt": "<iso8601>",
         "samplingRate": 1.0,
         "type": "event",

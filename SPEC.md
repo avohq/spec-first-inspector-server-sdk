@@ -22,10 +22,9 @@
 8. [ID Generation Format](#8-id-generation-format)
 9. [Schema Extraction Algorithm](#9-schema-extraction-algorithm)
 10. [Schema Extraction Golden Fixtures](#10-schema-extraction-golden-fixtures)
-11. [Encryption](#11-encryption)
-12. [Keepalive Timer and Flush](#12-keepalive-timer-and-flush)
-13. [Batching](#13-batching)
-14. [Out of Scope](#14-out-of-scope)
+11. [Flush and Shutdown](#11-flush-and-shutdown)
+12. [Batching](#12-batching)
+13. [Out of Scope](#13-out-of-scope)
 
 ---
 
@@ -78,7 +77,7 @@ server-side-only requirements; browser/client-side concerns are out of scope.
 - The `samplingRate` field MUST be updated using a lock or atomic primitive in Go, Python
   (threaded), Ruby (Ractors), and JVM languages. Last-write-wins is acceptable; strict ordering
   between concurrent responses is NOT required.
-- The pending batch buffer (see Section 13) is concurrently-accessed mutable state. Appending an
+- The pending batch buffer (see Section 12) is concurrently-accessed mutable state. Appending an
   event and the flush "swap-and-clear" (move the buffer contents to a local variable, then reset
   the shared buffer to empty) MUST be mutually atomic under a single lock: no event may be appended
   between the moment a flush reads the buffer and the moment it clears it, and no two flushes may
@@ -89,27 +88,28 @@ server-side-only requirements; browser/client-side concerns are out of scope.
 
 - Implementations MUST NOT write to disk or any persistent store (database, file system, etc.).
 - All state is in-memory only.
-- The pending batch buffer (see Section 13) is held in memory only and MUST NOT be persisted.
+- The pending batch buffer (see Section 12) is held in memory only and MUST NOT be persisted.
   Consequently, events that have been enqueued but not yet sent are lost if the process crashes,
   is killed, or exits without a successful `flush()`. The SDK provides **at-most-once** delivery for
   buffered events and makes no durability guarantee; callers that require delivery MUST `flush()`
-  before exit (see Sections 4.6 and 13).
+  before exit (see Sections 4.6 and 12).
 
 ### 3.3 No sessionId or visitorId
 
 - Implementations MUST NOT include `sessionId`, `visitorId`, or `userId` in the wire body.
 - The Inspector server SDK does not model end-user sessions.
-- `anonymousId` in the wire body is the caller-supplied `streamId` (or `""` if not provided).
-  It is NOT a generated session identifier.
+- The `streamId` field in the wire body carries the caller-supplied stream id (or `""` if not
+  provided). It is NOT a generated session identifier.
 - AI coding agents generating SDKs MUST NOT add browser-style session tracking.
 
-### 3.4 Keepalive and Flush
+### 3.4 Flush and Shutdown
 
-- Node.js SDKs MUST implement a keepalive timer (see Section 12).
-- Non-Node.js SDKs MUST implement a `flush()` method (see Section 4.6 and Section 12).
-- The shutdown contract MUST be documented in the SDK README: callers MUST invoke `flush()`
-  (non-Node) or `await` the promise returned by `trackSchemaFromEvent` before process exit,
-  if events may be in-flight or buffered in a pending batch (see Section 13).
+- All SDKs MUST implement a `flush()` method (see Section 4.6 and Section 11), regardless of the
+  target runtime. There is no runtime-specific keepalive mechanism, and an SDK MUST NOT rely on
+  holding the host process open by itself to deliver events.
+- The shutdown contract MUST be documented in the SDK README: callers MUST invoke `flush()` (or
+  `await` the promise returned by `trackSchemaFromEvent`) before process exit, if events may be
+  in-flight or buffered in a pending batch (see Section 12).
 
 ---
 
@@ -127,11 +127,10 @@ new AvoInspector(options: {
   env: "dev" | "staging" | "prod";   // REQUIRED (falls back to "dev" if invalid)
   version: string;                   // REQUIRED
   appName?: string;                  // OPTIONAL, defaults to ""
-  publicEncryptionKey?: string;      // OPTIONAL, see Section 11
-  batchSize?: number;                // OPTIONAL, default 30 (forced to 1 when env == "dev"), see Section 13
-  batchFlushSeconds?: number;        // OPTIONAL, default 30, see Section 13
-  maxQueueSize?: number;             // OPTIONAL, default 1000, see Section 13
-  disableBatchTimer?: boolean;       // OPTIONAL, default false, see Section 13
+  batchSize?: number;                // OPTIONAL, default 30 (forced to 1 when env == "dev"), see Section 12
+  batchFlushSeconds?: number;        // OPTIONAL, default 30, see Section 12
+  maxQueueSize?: number;             // OPTIONAL, default 1000, see Section 12
+  disableBatchTimer?: boolean;       // OPTIONAL, default false, see Section 12
 })
 ```
 
@@ -142,7 +141,6 @@ new AvoInspector(options: {
 | `apiKey` | MUST be a non-empty, non-whitespace string | `"[Avo Inspector] No API key provided. Inspector can't operate without API key."` |
 | `version` | MUST be a non-empty, non-whitespace string | `"[Avo Inspector] No version provided. Many features of Inspector rely on versioning. Please provide comparable string version, i.e. integer or semantic."` |
 | `env` | If absent, empty, or not one of `"dev"`/`"staging"`/`"prod"`: fall back to `"dev"` and emit a console warning. MUST NOT throw. | — |
-| `publicEncryptionKey` | If provided and `env != "prod"`, SHOULD emit a console warning if the value is not 66 or 130 hex chars. MUST NOT throw. | — |
 
 **Whitespace-only strings** for `apiKey` or `version` MUST be treated identically to empty
 strings (MUST throw with the error above).
@@ -151,7 +149,6 @@ strings (MUST throw with the error above).
 
 - If `env == "dev"`, logging MUST be enabled by default (`shouldLog = true`).
 - If `env != "dev"`, logging MUST be disabled by default (`shouldLog = false`).
-- Encryption is initialized if `publicEncryptionKey` is provided and non-empty.
 
 ---
 
@@ -171,7 +168,7 @@ trackSchemaFromEvent(
 2. Applies sampling per event (see Section 7.7): if the event is dropped by sampling, it MUST NOT
    be enqueued and no network call is made.
 3. Otherwise, enqueues the event into the pending batch buffer and evaluates the flush triggers
-   (see Section 13). The batch is sent to the Inspector API (see Section 7) when a flush trigger
+   (see Section 12). The batch is sent to the Inspector API (see Section 7) when a flush trigger
    fires — which, when `env == "dev"` (where `batchSize` is forced to `1`), is immediately within
    this call. When `batchSize > 1`, the actual send is deferred and MAY be triggered by a later
    call, by the scheduled flush, or by `flush()`.
@@ -183,16 +180,18 @@ trackSchemaFromEvent(
    to `console.error` (or language-equivalent) and MUST return
    `Promise.reject("Avo Inspector: something went wrong. Please report to support@avo.app.")`.
    The rejection value MUST be this exact string, not the original error object or message.
-6. MUST keep the process alive (via keepalive timer in Node.js, or pending-count tracking for
-   `flush()` in non-Node.js) until any network call initiated for the batch completes.
+6. MUST track in-flight sends (e.g. a pending-operation count) so that `flush()` can await their
+   completion. The SDK does NOT keep the host process alive on its own; callers MUST `flush()` (or
+   `await` the returned promise) before exit if a send for the batch may still be in-flight (see
+   Sections 4.6 and 11).
 
 **`streamId` rules:**
 
 - Implementations SHOULD pass `streamId` through as-is without modification. No hard validation
   is required.
 - If `streamId` contains `:`, the SDK MUST emit a console warning and MUST still use the value
-  unchanged as `anonymousId` in the wire body.
-- If `streamId` is absent or empty, `anonymousId` in the wire body MUST be `""`.
+  unchanged as `streamId` in the wire body.
+- If `streamId` is absent or empty, the `streamId` field in the wire body MUST be `""`.
 
 **Network errors and timeouts:** Network failures are swallowed inside the internal send handler.
 `trackSchemaFromEvent` MUST resolve with the extracted event schema even when the HTTP call
@@ -264,29 +263,27 @@ Cleans up all resources. After `destroy()` is called, state MUST be as follows:
 |---|---|---|
 | `pendingCount` | `0` | Reset; in-flight network calls are abandoned |
 | `pendingBatch` | cleared / empty | Buffered-but-unsent events are discarded (abandoned, NOT sent) |
-| `keepAliveTimer` | `null` / cleared | Timer is cancelled |
-| scheduled-flush timer | `null` / cleared | Background batch-flush timer (if any, see Section 13) is cancelled |
+| scheduled-flush timer | `null` / cleared | Background batch-flush timer (if any, see Section 12) is cancelled |
 | `samplingRate` | persisted (NOT reset) | Value from last 200 response is retained |
 | `apiKey`, `env`, `version`, `appName` | persisted (NOT reset) | Constructor options retained |
 | `shouldLog` (process-wide) | persisted (NOT reset) | Process-wide flag is not affected |
 
 `destroy()` is "cancel and clean up": it abandons in-flight requests and resets state. It does
 NOT flush pending requests. Callers who need delivery guarantees MUST await the
-`trackSchemaFromEvent` promise before calling `destroy()`, or use `flush()` (non-Node.js).
+`trackSchemaFromEvent` promise before calling `destroy()`, or use `flush()`.
 
 After `destroy()`, the instance MUST be treated as terminated. A subsequent
 `trackSchemaFromEvent()` call MUST return `Promise.resolve([])`, MUST NOT enqueue the event, and
 MUST NOT send an HTTP request. `destroy()` MUST discard the pending batch buffer without sending it
 (consistent with abandoning in-flight requests). (The field-state table above still applies:
-`pendingCount` is `0`, the keepalive and scheduled-flush timers are cleared, the pending batch is
+`pendingCount` is `0`, the scheduled-flush timer is cleared, the pending batch is
 discarded, and the constructor options plus the process-wide `shouldLog` flag persist.)
 
 ---
 
 ### 4.6 `flush`
 
-> Non-Node.js SDKs MUST implement `flush()`. Node.js SDKs MAY omit it (the keepalive timer
-> serves the same purpose in that runtime).
+> All SDKs MUST implement `flush()`, regardless of the target runtime.
 
 ```typescript
 flush(timeoutMs?: number): Promise<void>   // or synchronous equivalent
@@ -326,14 +323,13 @@ be in-flight.
 | Name | Type | Required | Default | Semantics |
 |---|---|---|---|---|
 | `apiKey` | string | YES | — | Inspector API key from the Avo Inspector dashboard. Sent in the request body as `apiKey`. MUST be non-empty and non-whitespace. |
-| `env` | `"dev"` or `"staging"` or `"prod"` | YES | Falls back to `"dev"` if invalid/absent | Controls logging defaults and encryption applicability. Sent in the request body as `env`. Exact string values are part of the wire protocol. |
+| `env` | `"dev"` or `"staging"` or `"prod"` | YES | Falls back to `"dev"` if invalid/absent | Controls logging defaults. Sent in the request body as `env`. Exact string values are part of the wire protocol. |
 | `version` | string | YES | — | Application version. Sent in the request body as `appVersion`. MUST be non-empty and non-whitespace. Comparable string (integer or semantic version). |
 | `appName` | string | NO | `""` | Application name. Sent in the request body as `appName`. |
-| `publicEncryptionKey` | string | NO | `undefined` (no encryption) | P-256 public key in hex (compressed 66 chars or uncompressed 130 chars). When present in dev/staging, property values are ECIES-encrypted before sending. In prod, this option is accepted but encryption is NOT applied. |
-| `batchSize` | integer | NO | `30` | Flush the pending batch when its length reaches `batchSize`. **Forced to `1` when `env == "dev"`** (immediate send), overriding any configured value. MUST be ≥ 1; values < 1 fall back to the default with a console warning. See Section 13. |
-| `batchFlushSeconds` | number | NO | `30` | Maximum age (seconds) of the oldest buffered event before a time/idle flush SHOULD occur. MUST be > 0; invalid values fall back to the default with a console warning. See Section 13. |
-| `maxQueueSize` | integer | NO | `1000` | Hard cap on buffered events; on overflow the oldest events are dropped first (FIFO). See Section 13. |
-| `disableBatchTimer` | boolean | NO | `false` | When `true`, no background/scheduled flush timer is started; flushing relies solely on the size trigger and explicit `flush()`. Serverless deployments SHOULD set this `true`. See Section 13. |
+| `batchSize` | integer | NO | `30` | Flush the pending batch when its length reaches `batchSize`. **Forced to `1` when `env == "dev"`** (immediate send), overriding any configured value. MUST be ≥ 1; values < 1 fall back to the default with a console warning. See Section 12. |
+| `batchFlushSeconds` | number | NO | `30` | Maximum age (seconds) of the oldest buffered event before a time/idle flush SHOULD occur. MUST be > 0; invalid values fall back to the default with a console warning. See Section 12. |
+| `maxQueueSize` | integer | NO | `1000` | Hard cap on buffered events; on overflow the oldest events are dropped first (FIFO). See Section 12. |
+| `disableBatchTimer` | boolean | NO | `false` | When `true`, no background/scheduled flush timer is started; flushing relies solely on the size trigger and explicit `flush()`. Serverless deployments SHOULD set this `true`. See Section 12. |
 
 Batch configuration is fixed at construction time. Implementations MAY omit runtime setters; if
 provided, mutating batch configuration at runtime MUST be lock-guarded and SHOULD be discouraged.
@@ -357,11 +353,11 @@ Generated SDKs MUST use these exact string values. The Inspector backend depends
 
 ### 6.2 Behavioral Implications
 
-| Env | Logging default | Encryption active? |
-|---|---|---|
-| `"dev"` | Enabled (`shouldLog = true`) | Yes (if `publicEncryptionKey` provided) |
-| `"staging"` | Disabled (`shouldLog = false`) | Yes (if `publicEncryptionKey` provided) |
-| `"prod"` | Disabled (`shouldLog = false`) | **No** (encryption is never applied in prod) |
+| Env | Logging default |
+|---|---|
+| `"dev"` | Enabled (`shouldLog = true`) |
+| `"staging"` | Disabled (`shouldLog = false`) |
+| `"prod"` | Disabled (`shouldLog = false`) |
 
 ### 6.3 Invalid Env Fallback
 
@@ -402,7 +398,7 @@ calls to that URL instead of `https://api.avo.app`. This is used by the conforma
 | `Content-Type` | `application/json` |
 | `Accept` | `application/json` |
 | `Content-Length` | Byte length of the request body actually sent (compressed length when `Content-Encoding: gzip` is present, otherwise the byte length of the serialized JSON) |
-| `Content-Encoding` | `gzip` — present ONLY when the body is gzip-compressed (see Section 7.3.7). MUST be absent for uncompressed bodies. |
+| `Content-Encoding` | `gzip` — present ONLY when the body is gzip-compressed (see Section 7.3.5). MUST be absent for uncompressed bodies. |
 
 There is no `Authorization` header. Authentication is carried inside the JSON body via the
 `apiKey` field.
@@ -417,16 +413,15 @@ There is no `Authorization` header. Authentication is carried inside the JSON bo
 
 The request body MUST be a JSON array of one or more event objects. A request carries a single
 event when batching is inactive (e.g. `env == "dev"`, where `batchSize` is forced to `1`) and
-multiple events when a batch is flushed (see Section 13).
+multiple events when a batch is flushed (see Section 12).
 
 Each event object in the array MUST be fully self-contained: it MUST carry its own `messageId`,
-`createdAt`, `anonymousId`, `eventName`, and `eventProperties`. A batch MAY contain events with
-different `anonymousId` (`streamId`) values, different `eventName`s, and different `createdAt`
+`createdAt`, `streamId`, `eventName`, and `eventProperties`. A batch MAY contain events with
+different `streamId` values, different `eventName`s, and different `createdAt`
 timestamps; implementations MUST NOT hoist, share, or deduplicate per-event fields across batch
 elements, and MUST NOT assume all events in a batch belong to the same stream. The instance-level
-fields (`apiKey`, `appName`, `appVersion`, `libVersion`, `env`, `libPlatform`, and
-`publicEncryptionKey` when present) are identical across a batch but are repeated on every element;
-the wire format has no shared header object.
+fields (`apiKey`, `appName`, `appVersion`, `libVersion`, `env`, and `libPlatform`) are identical
+across a batch but are repeated on every element; the wire format has no shared header object.
 
 ```json
 [
@@ -438,7 +433,7 @@ the wire format has no shared header object.
     "env": "dev",
     "libPlatform": "ruby",
     "messageId": "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
-    "anonymousId": "string",
+    "streamId": "string",
     "createdAt": "2026-05-25T12:00:00.000Z",
     "samplingRate": 1.0,
     "type": "event",
@@ -461,7 +456,7 @@ These fields MUST be present on every event object:
 | `env` | string | One of `"dev"`, `"staging"`, `"prod"` (exact wire values from `AvoInspectorEnv`). |
 | `libPlatform` | string | Identifies the SDK platform/language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). MUST be a non-empty string. |
 | `messageId` | string | UUID v4 (random). MUST be unique per event. See Section 8. |
-| `anonymousId` | string | The caller-supplied `streamId`, or `""` if none provided. |
+| `streamId` | string | The caller-supplied stream id, or `""` if none provided. |
 | `createdAt` | string | ISO 8601 UTC timestamp at event send time (e.g., `"2026-05-25T12:00:00.000Z"`). Millisecond precision MUST be included (`.000Z` suffix). |
 | `samplingRate` | number | Current sampling rate `[0.0, 1.0]`. Initial value `1.0`. Updated from server response. |
 
@@ -493,7 +488,7 @@ canonical approaches:
 
 The SDK README MUST instruct maintainers to update the version constant on each release.
 
-#### 7.3.4 Property Object (Plain, No Encryption)
+#### 7.3.4 Property Object
 
 ```json
 {
@@ -522,28 +517,7 @@ This is a heterogeneous, recursive union type: element = type string | SchemaEnt
 of (element). In statically-typed languages (Go, Rust, Java), implementations MUST use a union/sum
 type or interface/any type for `children` elements.
 
-#### 7.3.5 Property Object (Encrypted)
-
-When encryption is active (see Section 11):
-
-```json
-{
-  "propertyName": "string",
-  "propertyType": "string",
-  "encryptedPropertyValue": "base64-encoded-string",
-  "children": []
-}
-```
-
-List-type properties are OMITTED ENTIRELY from the encrypted property array when encryption
-is active (not sent to the server).
-
-#### 7.3.6 `publicEncryptionKey` in Base Body
-
-The `publicEncryptionKey` field MUST be included in the base body only when a non-empty key
-was provided at constructor time.
-
-#### 7.3.7 Request Body Compression (gzip)
+#### 7.3.5 Request Body Compression (gzip)
 
 To reduce egress, SDKs gzip-compress the serialized request body before sending it. The Inspector
 backend accepts both compressed and uncompressed request bodies on the same endpoint.
@@ -559,7 +533,7 @@ compress a large body on a gzip-capable runtime is **not** conformant.
 **1024 bytes** (UTF-8 encoded). Bodies smaller than 1024 bytes MUST be sent uncompressed — for
 small payloads the gzip framing overhead outweighs the savings. The comparison is on UTF-8 **byte
 length** (`>= 1024`), not character count, and is evaluated at flush time on the **assembled batch
-body actually sent** (the full JSON array — see Section 13). A multi-event batch is far more likely
+body actually sent** (the full JSON array — see Section 12). A multi-event batch is far more likely
 to exceed the threshold, but the rule is identical to that for a single-element body. Server SDKs
 MUST use byte length, which is the same value already reported in `Content-Length`.
 
@@ -628,10 +602,9 @@ catch block.
 
 ### 7.5.1 Security Constraints on Error Logging
 
-SDKs MUST NOT log the `apiKey` value, the `publicEncryptionKey` value, or full request bodies
-that contain the `apiKey`. Error logs MUST redact these fields if they appear in an error
-object or response body before passing the error to `console.error` or the language-equivalent
-logging facility.
+SDKs MUST NOT log the `apiKey` value or full request bodies that contain the `apiKey`. Error logs
+MUST redact this field if it appears in an error object or response body before passing the error
+to `console.error` or the language-equivalent logging facility.
 
 ### 7.5.2 Behavior Under Batching (`batchSize > 1`)
 
@@ -645,7 +618,7 @@ be triggered by a later call, by the scheduled flush, or by `flush()`). Therefor
 | Event dropped by sampling at enqueue | `trackSchemaFromEvent` resolves with the extracted schema; the event is not buffered and no call is made (see §7.7). |
 | Synchronous internal error before enqueue | `Promise.reject("Avo Inspector: something went wrong. Please report to support@avo.app.")` — unchanged from the table above. |
 | Batch send returns non-200 | Logged per §7.5 (in dev/staging with logging enabled). The batch MUST NOT be re-queued (a permanent rejection; re-queuing would loop). Not observable to any `trackSchemaFromEvent` promise. |
-| Batch send network error / timeout | Logged per §7.5. The batch's events SHOULD be re-queued at the front of the buffer for a later flush (subject to `maxQueueSize`; see Section 13). Not observable to any `trackSchemaFromEvent` promise. |
+| Batch send network error / timeout | Logged per §7.5. The batch's events SHOULD be re-queued at the front of the buffer for a later flush (subject to `maxQueueSize`; see Section 12). Not observable to any `trackSchemaFromEvent` promise. |
 
 Consequently, the `Promise.resolve([])`-on-non-200 behavior in the §7.5 table is observable per call
 **only** when the send is synchronous to the call (`batchSize == 1`, always true in `dev`). When
@@ -670,7 +643,7 @@ submissions, so at-least-once redelivery is acceptable).
 
 - Default `samplingRate`: `1.0` (send all events).
 - Sampling MUST be evaluated **per event, at enqueue time** — before the event is appended to the
-  pending batch (see Section 13). The SDK MUST compare a random number (uniformly distributed in
+  pending batch (see Section 12). The SDK MUST compare a random number (uniformly distributed in
   `[0.0, 1.0)`) against `samplingRate`. If `random > samplingRate`, the event MUST be dropped
   silently: it MUST NOT be enqueued and no network call is made. Whole-batch sampling (a single
   random check that drops an entire batch) MUST NOT be used — sampling granularity is per event,
@@ -702,11 +675,11 @@ submissions, so at-least-once redelivery is acceptable).
 - Implementations MAY use a cryptographic UUID v4 library. The format MUST match; the entropy
   source MAY differ.
 
-### 8.2 Stream ID (`streamId` / `anonymousId`)
+### 8.2 Stream ID (`streamId`)
 
 - User-supplied string. No generation logic on the SDK side — it is whatever the caller passes.
 - Implementations MUST pass `streamId` through as-is without modification.
-- If absent or empty, `anonymousId` in the wire body MUST be `""` (empty string).
+- If absent or empty, `streamId` in the wire body MUST be `""` (empty string).
 - `trackingId` and `sessionId` MUST NOT be sent. They have been removed from the server SDK
   wire format.
 
@@ -1143,151 +1116,66 @@ See Section 9.3.2 for the recursion depth truncation rule.
 
 ---
 
-## 11. Encryption
+## 11. Flush and Shutdown
 
-### 11.1 Status: OPTIONAL / MAY Implement in v1
+### 11.1 Flush Is the Universal Delivery Guarantee
 
-Encryption is an opt-in feature. Generated SDKs MAY omit it in v1 and add it in a later release.
-When implemented, the wire format MUST be followed exactly (it is cross-SDK and the backend
-depends on the byte layout).
+All SDKs MUST implement `flush()` (see Section 4.6), regardless of target runtime, so that callers
+can deterministically deliver in-flight and buffered events before the host process or function
+handler exits. There is **no** runtime-specific keepalive mechanism: an SDK MUST NOT rely on any
+mechanism that holds the host process open by itself (such as a no-op keepalive timer) to deliver
+events. Delivery before exit is the caller's responsibility, performed by invoking `flush()` or by
+`await`-ing the promise returned by `trackSchemaFromEvent`.
 
-### 11.2 Applicability Rules
+Callers that do not `flush()` (or `await`) before exit may lose events that are still in-flight or
+buffered in the pending batch (at-most-once delivery — see Sections 3.2 and 12.6). SDKs MUST
+document this shutdown contract in the README.
 
-Encryption is ACTIVE when ALL of the following are true:
+> **Implementation note.** An SDK MAY register a best-effort at-exit / shutdown hook (e.g. an
+> `atexit` handler, a runtime shutdown callback, or the language-idiomatic equivalent) that calls
+> `flush()` automatically. This is OPTIONAL convenience only: it MUST NOT be the SDK's sole
+> delivery mechanism, and an explicit `flush()` before exit remains the documented contract.
 
-- `publicEncryptionKey` was provided at constructor time AND is non-empty.
-- `env != "prod"`.
-
-Encryption is INACTIVE in `prod` even if a key is provided.
-
-### 11.3 Algorithm
-
-**Algorithm:** ECIES (Elliptic Curve Integrated Encryption Scheme) with P-256 (prime256v1 /
-secp256r1).
-
-**Key input — accepted formats:**
-
-- Compressed: 66 hex characters, prefix `02` or `03`
-- Uncompressed: 130 hex characters, prefix `04`
-
-### 11.4 Wire Format
-
-The encrypted property value is base64-encoded. The decoded bytes MUST have this exact layout:
-
-```text
-[0x00][65-byte uncompressed ephemeral P-256 pubkey][16-byte AES-256-GCM IV][16-byte GCM auth tag][variable-length ciphertext]
-```
-
-| Byte range | Content |
-|---|---|
-| Byte 0 | Version `0x00` |
-| Bytes 1–65 | Ephemeral public key (uncompressed, starts with `0x04`) |
-| Bytes 66–81 | AES-256-GCM IV (16 bytes, random) |
-| Bytes 82–97 | GCM auth tag (16 bytes) |
-| Bytes 98+ | AES-256-GCM encrypted ciphertext |
-
-> **IV size normative note:** The IV is **16 bytes**, NOT the 12-byte (96-bit) GCM standard.
-> AES-256-GCM with a 16-byte IV is valid per the GCM specification but non-standard.
-> Implementations MUST use exactly 16 bytes to maintain wire compatibility. Do NOT "fix" this
-> to 12 bytes — doing so will produce ciphertext that the Inspector backend cannot decrypt.
-
-### 11.5 KDF
-
-AES key = `SHA-256(ECDH shared secret X-coordinate)`
-
-The X-coordinate MUST be the raw 32-byte big-endian representation as returned by the P-256
-ECDH shared secret extraction. The SHA-256 hash is computed over these 32 raw bytes.
-
-Implementations MUST NOT hex-encode the shared secret before hashing:
-`SHA-256(raw_bytes)` ≠ `SHA-256(hex_string)`. Cross-implementation encryption will be silently
-incompatible if the wrong encoding is used.
-
-### 11.6 Plaintext
-
-`JSON.stringify(rawPropertyValue)` — the JSON-encoded raw property value, not the type string.
-Missing properties MUST encrypt the string literal `"null"`.
-
-### 11.7 List-Type Omission
-
-List-type properties MUST be omitted entirely from the encrypted property array when encryption
-is active. They are not sent to the server.
-
-### 11.8 Encryption Failure
-
-When encryption fails (invalid key, crypto error): the property MUST be omitted from the array;
-a warning MUST be logged; other properties MUST continue to be sent.
-
----
-
-## 12. Keepalive Timer and Flush
-
-### 12.1 Node.js Keepalive
-
-Node.js SDKs MUST use a keepalive mechanism to prevent the process from exiting while a network
-send is in-flight. Callers typically do not `await` the promise returned by `trackSchemaFromEvent`,
-so without a keepalive the process may exit before the HTTP call completes.
-
-**Keepalive behavior:**
-
-- Timer is started when `pendingCount` increments from 0 to 1 (first pending operation).
-- Timer interval: **60 seconds** (no-op callback — the sole purpose is to hold the event loop).
-- Timer is cleared when `pendingCount` returns to 0 (all pending operations complete).
-
-### 12.2 Non-Node.js: `flush()` Requirement
-
-Non-Node.js SDKs MUST NOT implement the 60-second no-op timer (it would cause hangs in
-long-running server processes and serverless functions).
-
-Instead, non-Node.js SDKs MUST implement `flush()` (see Section 4.6) and MUST document it
-in the SDK README as required before process exit.
-
-### 12.3 Serverless Guidance
+### 11.2 Serverless Guidance
 
 In serverless environments (AWS Lambda, Google Cloud Functions, Vercel Edge Functions, Cloudflare
 Workers, etc.), the runtime reclaims resources when the function handler returns. SDKs MUST
 expose `flush()` and MUST document that callers MUST invoke it before the function handler
-returns to ensure in-flight events are delivered.
+returns to ensure in-flight events are delivered. Serverless SDKs SHOULD also set
+`disableBatchTimer` (see Section 12).
 
-### 12.4 `destroy()` vs. `flush()` Clarification
+### 11.3 `destroy()` vs. `flush()` Clarification
 
 These are distinct operations and MUST NOT be conflated:
 
 - `destroy()` — **cancel and clean up.** Discards the pending batch unsent, abandons in-flight
-  requests, resets `pendingCount` to 0, clears the keepalive and scheduled-flush timers. Does NOT
-  wait for in-flight requests.
+  requests, resets `pendingCount` to 0, and clears the scheduled-flush timer. Does NOT wait for
+  in-flight requests.
 - `flush()` — **wait and continue.** Force-flushes (sends) the pending batch, then waits for all
   pending operations to complete (or timeout), then resolves. Does NOT reset state. Instance is
   fully usable after `flush()` returns.
 
-### 12.5 Scheduled Flush Timer vs. Keepalive Timer
+### 11.4 Scheduled Flush Timer
 
-The Node.js keepalive timer (Section 12.1) and the batching scheduled-flush timer (Section 13) are
-**different mechanisms** and MUST NOT be conflated:
-
-- The **keepalive timer** is a Node.js-only, no-op timer whose sole purpose is to *hold the event
-  loop open* while a send is in-flight. Non-Node.js SDKs MUST NOT implement it (Section 12.2).
-- The **scheduled-flush timer** (any runtime) does real work: it periodically flushes a non-empty
-  pending batch so partial batches do not linger on idle/low-traffic processes. It MUST NOT hold the
-  process open — in runtimes with a reference-counted event loop it MUST be unref'd (or the
-  language-idiomatic equivalent: daemon thread, weak/background timer). Section 12.2's prohibition is
-  on the 60-second no-op keepalive timer only; it does NOT forbid a non-blocking scheduled flush.
-
-A Node.js SDK MAY have both: the keepalive timer to hold the loop while a send completes, and the
-scheduled-flush timer (unref'd) to drain idle partial batches. Both timers MUST be cleared by
-`destroy()`.
+The batching scheduled-flush timer (Section 12) periodically flushes a non-empty pending batch so
+partial batches do not linger on idle/low-traffic processes. It MUST NOT hold the process open — in
+runtimes with a reference-counted event loop it MUST be unref'd (or the language-idiomatic
+equivalent: daemon thread, weak/background timer). It is therefore a best-effort drain that runs
+only while the process is otherwise alive; it is **not** a substitute for `flush()` before exit. The
+scheduled-flush timer MUST be cleared by `destroy()`.
 
 ---
 
-## 13. Batching
+## 12. Batching
 
-### 13.1 Overview
+### 12.1 Overview
 
 Conformant SDKs accumulate events in an in-memory **pending batch buffer** and send them to the
 Inspector API as a single JSON array (see Section 7.3), flushed when a size or time trigger fires.
 Batching reduces the number of HTTP requests on busy servers. The wire body is already an array, so
 batching changes buffering and lifecycle, not the per-event wire shape.
 
-### 13.2 Configuration
+### 12.2 Configuration
 
 Batch behavior is controlled by the constructor options in Section 5:
 
@@ -1304,7 +1192,7 @@ immediate visibility during development.
 
 Batch configuration is fixed at construction time (Section 5).
 
-### 13.3 Flush Triggers
+### 12.3 Flush Triggers
 
 The buffer is flushed when **either** trigger fires:
 
@@ -1314,18 +1202,18 @@ The buffer is flushed when **either** trigger fires:
   is NOT sufficient for a long-running server process and MUST NOT be the sole time-flush mechanism
   in non-serverless, long-running deployments; such SDKs SHOULD run a scheduled flush. Any
   scheduled/background flush MUST be non-blocking and MUST NOT prevent the process from exiting
-  (Section 12.5). The size trigger remains MUST in all deployments.
+  (Section 11.4). The size trigger remains MUST in all deployments.
 
 A flush of an empty buffer is a no-op (no request is made).
 
-### 13.4 Send and Concurrency
+### 12.4 Send and Concurrency
 
 Under a single lock, the SDK appends the event and evaluates the triggers; if flushing, it moves the
 buffer contents to a local variable and resets the shared buffer to empty (the atomic "swap and
 clear" of Section 3.1). The HTTP send (the assembled array as the request body) MUST be performed
 OUTSIDE the lock. The buffer is shared mutable state and MUST be synchronized per Section 3.1.
 
-### 13.5 Buffer Bound and Failure Handling
+### 12.5 Buffer Bound and Failure Handling
 
 - The buffer MUST be bounded by `maxQueueSize` (default **1000**). When appending would exceed the
   cap, the SDK MUST drop the **oldest** buffered events first (FIFO) to make room for the newest.
@@ -1338,7 +1226,7 @@ OUTSIDE the lock. The buffer is shared mutable state and MUST be synchronized pe
 - Re-queue MUST take the buffer lock and MUST NOT mutate any event's `messageId`. Because the backend
   tolerates duplicate submissions of the same `messageId`, at-least-once redelivery is acceptable.
 
-### 13.6 Persistence and Lifecycle
+### 12.6 Persistence and Lifecycle
 
 - The buffer is in-memory only and MUST NOT be persisted (Section 3.2). Buffered-but-unsent events
   are lost on crash/kill/exit-without-flush (at-most-once delivery).
@@ -1347,14 +1235,14 @@ OUTSIDE the lock. The buffer is shared mutable state and MUST be synchronized pe
   background timer may be suspended between invocations or leak across warm-container reuse).
 - `destroy()` MUST discard the pending batch unsent and stop the scheduled-flush timer (Section 4.5).
 
-### 13.7 Wire Shape
+### 12.7 Wire Shape
 
 A flushed batch is a JSON array of one or more self-contained event objects (Section 7.3); a batch
-MAY mix `anonymousId`/`eventName`/`createdAt` across elements. `Content-Type` remains
+MAY mix `streamId`/`eventName`/`createdAt` across elements. `Content-Type` remains
 `application/json` (Section 7.2). gzip applies to the assembled batch body per the 1024-byte rule
-(Section 7.3.7).
+(Section 7.3.5).
 
-### 13.8 Promise and Sampling Semantics
+### 12.8 Promise and Sampling Semantics
 
 - `trackSchemaFromEvent` resolves with the extracted schema at enqueue time (Section 4.2); the
   batch's eventual HTTP outcome is not observable per call when `batchSize > 1` (Section 7.5.2).
@@ -1362,7 +1250,7 @@ MAY mix `anonymousId`/`eventName`/`createdAt` across elements. `Content-Type` re
 
 ---
 
-## 14. Out of Scope
+## 13. Out of Scope
 
 The following are explicitly out of scope for spec v1. Implementations MUST NOT include them;
 AI agents generating SDKs MUST NOT add them.
@@ -1373,8 +1261,12 @@ AI agents generating SDKs MUST NOT add them.
   Crates.io, npm, Maven Central, etc. is the customer's responsibility.
 - **Persistent / durable queuing.** Writing the pending batch to disk or any persistent store, and
   cross-process or cross-restart batch durability, are out of scope. The batch buffer is in-memory
-  only (Sections 3.2 and 13); buffered-but-unsent events are lost on process exit without `flush()`.
+  only (Sections 3.2 and 12); buffered-but-unsent events are lost on process exit without `flush()`.
 - **Telemetry or usage reporting** from generated SDKs.
+- **Property-value encryption.** ECIES, `publicEncryptionKey`, and any encryption of event
+  property values are out of scope for v1. SDKs MUST NOT implement property-value encryption and
+  MUST NOT accept a `publicEncryptionKey` constructor option. A future `[WIRE]`-tagged release MAY
+  introduce encryption.
 - **sessionId / visitorId / userId.** Server SDKs MUST NOT include these fields.
 
 ---
@@ -1442,4 +1334,4 @@ manifest metadata, or a `SPEC_VERSION` constant).
 ---
 
 *Spec version: 1.0.0 — Initial publication.*
-*Last updated: 2026-06-23.*
+*Last updated: 2026-06-24.*

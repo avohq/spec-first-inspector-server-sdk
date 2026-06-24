@@ -100,11 +100,10 @@ The input envelope is a JSON object with the following fields.
 | `env` | string | YES | One of `"dev"`, `"staging"`, `"prod"`. |
 | `version` | string | YES | Application version string. |
 | `appName` | string | NO | Application name. Defaults to `""` if absent. |
-| `publicEncryptionKey` | string | NO | P-256 public key in hex (66 or 130 chars). Present only for encryption-related fixtures. |
-| `batchSize` | integer | NO | Batch flush size (SPEC.md §13). Present only for batching fixtures (e.g. `wire-8`). When absent, the SDK default applies (30, forced to 1 in `dev`). |
-| `batchFlushSeconds` | number | NO | Batch time/idle flush threshold in seconds (SPEC.md §13). When absent, the SDK default applies (30). |
-| `maxQueueSize` | integer | NO | Maximum buffered events before FIFO-oldest drop (SPEC.md §13). When absent, the SDK default applies (1000). |
-| `disableBatchTimer` | boolean | NO | When `true`, the SDK starts no background/scheduled flush timer (SPEC.md §13). When absent, defaults to `false`. |
+| `batchSize` | integer | NO | Batch flush size (SPEC.md §12). Present only for batching fixtures (e.g. `wire-8`). When absent, the SDK default applies (30, forced to 1 in `dev`). |
+| `batchFlushSeconds` | number | NO | Batch time/idle flush threshold in seconds (SPEC.md §12). When absent, the SDK default applies (30). |
+| `maxQueueSize` | integer | NO | Maximum buffered events before FIFO-oldest drop (SPEC.md §12). When absent, the SDK default applies (1000). |
+| `disableBatchTimer` | boolean | NO | When `true`, the SDK starts no background/scheduled flush timer (SPEC.md §12). When absent, defaults to `false`. |
 
 ### `operation` values and `input` shapes
 
@@ -342,7 +341,7 @@ The mock server MUST implement the following endpoints:
 **`POST /`** — Records the incoming request and returns the configured response.
 
 - Request body: the SDK's serialized JSON event array. The body MAY be gzip-compressed (see
-  SPEC.md §7.3.7). When the request carries a `Content-Encoding: gzip` header, the mock server
+  SPEC.md §7.3.5). When the request carries a `Content-Encoding: gzip` header, the mock server
   MUST gunzip the raw bytes before parsing the JSON body. When the header is absent, the body
   MUST be parsed as-is.
 - Response: the HTTP status and body from the fixture's `mock_response` field.
@@ -391,7 +390,7 @@ This is how a fixture asserts that a small body carries **no** `Content-Encoding
 (`{ "content-encoding": null }`), or that a large body was compressed
 (`{ "content-encoding": "gzip" }`).
 
-Compression is mandatory when feasible (SPEC.md §7.3.7): on a gzip-capable runtime an SDK MUST
+Compression is mandatory when feasible (SPEC.md §7.3.5): on a gzip-capable runtime an SDK MUST
 compress every `>= 1024`-byte body. Every conformance harness runs on such a runtime, so the
 large-body fixture (`wire-6`) asserts `content-encoding: "gzip"`. The only conformant exception is
 an SDK that targets a runtime with no gzip implementation at all; such an SDK is exempt from the

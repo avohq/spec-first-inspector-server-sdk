@@ -86,13 +86,13 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   unless `AVO_INSPECTOR_MOCK_ENDPOINT` is set, in which case it MUST POST to that URL
   verbatim (SPEC.md §7.1).
 - [ ] Every outgoing request body is a JSON array of one or more event objects (SPEC.md §7.3). Each
-  element MUST be fully self-contained (own `messageId`/`createdAt`/`anonymousId`/`eventName`/
-  `eventProperties`); a batch MAY mix `anonymousId`/`eventName` across elements (SPEC.md §7.3, §13).
+  element MUST be fully self-contained (own `messageId`/`createdAt`/`streamId`/`eventName`/
+  `eventProperties`); a batch MAY mix `streamId`/`eventName` across elements (SPEC.md §7.3, §12).
 
   **Required fields (MUST be present in every wire body):**
-  `anonymousId`, `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
+  `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
   `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
-  `messageId`, `samplingRate`, `type`.
+  `messageId`, `samplingRate`, `streamId`, `type`.
 
   **Forbidden fields (MUST NOT appear in any wire body):**
   `sessionId`, `trackingId`.
@@ -107,7 +107,7 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   implementation is available, with `Content-Encoding: gzip` and `Content-Length` set to the
   compressed length; `Content-Type` stays `application/json`. Fall back to an uncompressed body
   (no `Content-Encoding` header) ONLY for sub-1024-byte bodies, a runtime with no gzip, or a
-  compression error — not by choice (SPEC.md §7.3.7). A no-gzip runtime MUST document the
+  compression error — not by choice (SPEC.md §7.3.5). A no-gzip runtime MUST document the
   limitation in the README.
 
 ### Error Handling and Resilience
@@ -131,42 +131,43 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 
 - [ ] Events are accumulated in an **in-memory** pending batch buffer and sent as a JSON array.
   The buffer MUST NOT be persisted; buffered-but-unsent events are lost on crash/exit-without-flush
-  (at-most-once) (SPEC.md §3.2, §13.1, §13.6).
+  (at-most-once) (SPEC.md §3.2, §12.1, §12.6).
 - [ ] Flush triggers: when the buffer reaches `batchSize` (MUST); when the oldest buffered event is
   older than `batchFlushSeconds` (SHOULD, via a non-blocking scheduled flush that MUST NOT hold the
-  process open). `batchSize` defaults to **30**, `batchFlushSeconds` to **30** (SPEC.md §13.2, §13.3).
+  process open). `batchSize` defaults to **30**, `batchFlushSeconds` to **30** (SPEC.md §12.2, §12.3).
 - [ ] `env == "dev"` MUST force `batchSize = 1` (immediate send), overriding any configured value
-  (SPEC.md §13.2).
+  (SPEC.md §12.2).
 - [ ] `trackSchemaFromEvent` resolves with the extracted schema **at enqueue time**; when
   `batchSize > 1` the resolved value MUST NOT reflect the batch's eventual HTTP status
   (SPEC.md §4.2, §7.5.2).
 - [ ] The buffer is shared mutable state: enqueue and the swap-and-clear MUST be atomic under a lock,
-  and the HTTP send MUST be performed OUTSIDE the lock (SPEC.md §3.1, §13.4).
+  and the HTTP send MUST be performed OUTSIDE the lock (SPEC.md §3.1, §12.4).
 - [ ] The buffer is bounded by `maxQueueSize` (default **1000**); on overflow the oldest events are
   dropped (FIFO) and the drop MUST be logged (count only). Transient (network/timeout) failures
   SHOULD re-queue at the front; a non-200 MUST NOT re-queue; `messageId` MUST NOT be mutated on
-  re-queue (SPEC.md §13.5).
+  re-queue (SPEC.md §12.5).
 - [ ] `Content-Type` stays `application/json` for batched bodies; gzip applies to the assembled batch
-  body per the 1024-byte rule (SPEC.md §7.2, §7.3.7, §13.7).
+  body per the 1024-byte rule (SPEC.md §7.2, §7.3.5, §12.7).
 
-### Flush and Lifecycle (Non-Node.js SDKs)
+### Flush and Lifecycle (All SDKs)
 
-- [ ] Non-Node.js SDKs MUST implement `flush(timeoutMs?: number): Promise<void>` (or synchronous
-  equivalent). `flush()` MUST **force-flush the pending batch** (send all buffered events) and then
-  resolve (never reject) once all pending sends have completed or been abandoned. Default timeout:
-  10,000 ms (SPEC.md §4.6, §13.6).
+- [ ] All SDKs MUST implement `flush(timeoutMs?: number): Promise<void>` (or synchronous
+  equivalent), regardless of target runtime. `flush()` MUST **force-flush the pending batch** (send
+  all buffered events) and then resolve (never reject) once all pending sends have completed or been
+  abandoned. Default timeout: 10,000 ms (SPEC.md §4.6, §12.6).
 - [ ] `flush()` MUST be documented in the SDK README as required before process exit or function
-  handler return (serverless) when events may be in-flight or buffered. Serverless SDKs SHOULD set
-  `disableBatchTimer` (SPEC.md §3.4, §12.2, §12.3, §13.6).
+  handler return (serverless) when events may be in-flight or buffered. The SDK MUST NOT rely on a
+  keepalive timer or any process-holding mechanism to deliver events. Serverless SDKs SHOULD set
+  `disableBatchTimer` (SPEC.md §3.4, §11.1, §11.2, §12.6).
 
 ### Lifecycle
 
 - [ ] `destroy()` is implemented and after `destroy()`, `trackSchemaFromEvent()` MUST be a no-op
   (MUST return `Promise.resolve([])`, MUST NOT enqueue, and MUST NOT send an HTTP request).
-  `destroy()` MUST discard the pending batch unsent. `pendingCount` MUST be `0` and the keepalive
-  and scheduled-flush timers MUST be cleared after `destroy()`. Constructor options (`apiKey`,
+  `destroy()` MUST discard the pending batch unsent. `pendingCount` MUST be `0` and the
+  scheduled-flush timer MUST be cleared after `destroy()`. Constructor options (`apiKey`,
   `env`, `version`, `appName`, `samplingRate`) and the process-wide `shouldLog` flag MUST NOT be
-  reset (SPEC.md §4.5, §13.6, AC-19).
+  reset (SPEC.md §4.5, §12.6, AC-19).
 
 ---
 
@@ -261,9 +262,9 @@ When `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST POST to that URL instead
 ### AC-9 — Complete wire body fields (SPEC.md §7.3)
 
 Every outgoing event object contains all required fields:
-`anonymousId`, `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
+`apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
 `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
-`messageId`, `samplingRate`, `type`.
+`messageId`, `samplingRate`, `streamId`, `type`.
 `sessionId` and `trackingId` MUST NOT be sent.
 
 ### AC-10 — libVersion plain SemVer, no suffix (SPEC.md §7.3.3)
@@ -303,21 +304,22 @@ When `samplingRate` is `1.0`, all events are sent.
 `samplingRate` is updated from the `samplingRate` field of every successful 200 response.
 Guarded by a lock or atomic primitive in multi-threaded runtimes.
 
-### AC-18 — flush() implemented for non-Node SDKs (SPEC.md §3.4, §4.6, §12.2)
+### AC-18 — flush() implemented for all SDKs (SPEC.md §3.4, §4.6, §11.1)
 
-Non-Node.js SDKs implement `flush()`. It resolves once all pending sends have completed or
-been abandoned. Default timeout: 10,000 ms. It MUST resolve (never reject). Documented in
-the SDK README as required before process/function exit.
+All SDKs implement `flush()`, regardless of target runtime. It resolves once all pending sends have
+completed or been abandoned. Default timeout: 10,000 ms. It MUST resolve (never reject). Documented
+in the SDK README as required before process/function exit. There is no runtime-specific keepalive
+timer.
 
 ### AC-19 — destroy() post-state correct (SPEC.md §4.5)
 
-After `destroy()`, `pendingCount` is `0` and the keepalive timer is cleared. `apiKey`, `env`,
+After `destroy()`, `pendingCount` is `0` and the scheduled-flush timer is cleared. `apiKey`, `env`,
 `version`, `appName`, `samplingRate`, and the process-wide `shouldLog` flag are NOT reset.
 A subsequent `trackSchemaFromEvent()` MUST return `Promise.resolve([])` and MUST NOT send.
 `destroy()` is distinct from `flush()`: it cancels and cleans up; it does not wait for
 in-flight requests.
 
-### AC-20 — Batch buffering and flush triggers (SPEC.md §13.1, §13.2, §13.3)
+### AC-20 — Batch buffering and flush triggers (SPEC.md §12.1, §12.2, §12.3)
 
 Events are accumulated in an in-memory pending batch buffer and sent as a JSON array. The buffer is
 flushed when its length reaches `batchSize` (MUST) or when the oldest buffered event exceeds
@@ -330,25 +332,25 @@ flushed when its length reaches `batchSize` (MUST) or when the oldest buffered e
 resolved value does not reflect the batch's eventual HTTP status. Sampling is evaluated per event at
 enqueue; a dropped event is never buffered.
 
-### AC-22 — Batch buffer concurrency (SPEC.md §3.1, §13.4)
+### AC-22 — Batch buffer concurrency (SPEC.md §3.1, §12.4)
 
 The pending batch buffer is synchronized: enqueue and the swap-and-clear are atomic under a single
 lock, and the HTTP send is performed outside the lock (the lock is never held across the network
 call).
 
-### AC-23 — Buffer bound and failure handling (SPEC.md §13.5)
+### AC-23 — Buffer bound and failure handling (SPEC.md §12.5)
 
 The buffer is bounded by `maxQueueSize` (default 1000); on overflow the oldest events are dropped
 (FIFO) and the drop is logged (count only, no contents). Transient (network/timeout) failures
 re-queue at the front; a non-200 response does not re-queue; `messageId` is not mutated on re-queue.
 
-### AC-24 — flush() drains / destroy() discards (SPEC.md §4.6, §13.6)
+### AC-24 — flush() drains / destroy() discards (SPEC.md §4.6, §12.6)
 
 `flush()` force-flushes the pending batch (sends all buffered events) and then awaits completion.
 `destroy()` discards the pending batch unsent and stops the scheduled-flush timer.
 
-### AC-25 — Batch wire shape (SPEC.md §7.2, §7.3, §7.3.7, §13.7)
+### AC-25 — Batch wire shape (SPEC.md §7.2, §7.3, §7.3.5, §12.7)
 
-A flushed batch is a JSON array of self-contained event objects that MAY mix `anonymousId`/
+A flushed batch is a JSON array of self-contained event objects that MAY mix `streamId`/
 `eventName` across elements. `Content-Type` stays `application/json`; gzip applies to the assembled
 batch body per the 1024-byte rule.

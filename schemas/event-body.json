@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/avohq/spec-first-inspector-server-sdk/main/schemas/event-body.json",
   "title": "EventBody",
-  "description": "A single event object in the Inspector v1 track request body (plain, no encryption). type must be 'event'.",
+  "description": "A single event object in the Inspector v1 track request body. type must be 'event'.",
   "type": "object",
   "required": [
     "apiKey",
@@ -12,7 +12,7 @@
     "env",
     "libPlatform",
     "messageId",
-    "anonymousId",
+    "streamId",
     "createdAt",
     "samplingRate",
     "type",
@@ -54,7 +54,7 @@
       "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
       "description": "UUID v4, unique per event."
     },
-    "anonymousId": {
+    "streamId": {
       "type": "string",
       "description": "Caller-supplied streamId, or empty string if none provided."
     },
@@ -68,10 +68,6 @@
       "minimum": 0.0,
       "maximum": 1.0,
       "description": "Current sampling rate [0.0, 1.0]. Initial value 1.0."
-    },
-    "publicEncryptionKey": {
-      "type": "string",
-      "description": "P-256 public key in hex (compressed 66 chars or uncompressed 130 chars). Present only when provided at constructor time."
     },
     "type": {
       "type": "string",
