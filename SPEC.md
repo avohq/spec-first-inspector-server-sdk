@@ -798,23 +798,11 @@ When a conformance fixture is delivered via JSON stdin (e.g., from the conforman
 host language's JSON parser MUST be configured to preserve the `int` vs. `float` distinction in
 the literal source. Most default JSON parsers lose this distinction.
 
-**Per-language requirements:**
-
-| Language | Default behavior | Required configuration |
-|---|---|---|
-| **JavaScript** | `JSON.parse` produces `number` for both `0` and `0.0` | Use `Number.isInteger()` per existing guidance in §9.3.1 |
-| **Python** | `json.loads` maps all numbers to `int` or `float` based on presence of decimal point — correctly preserves distinction by default | No special config needed |
-| **Go** | `encoding/json` maps all JSON numbers to `float64` by default — loses distinction | MUST use `json.Decoder` with `UseNumber()` to get `json.Number`, then check `strings.Contains(n.String(), ".")` or attempt integer parse |
-| **Java** | Jackson maps JSON numbers to `int`/`long`/`double` based on magnitude — may lose `0.0` vs `0` distinction | MUST enable `DeserializationFeature.USE_BIG_DECIMAL_FOR_FLOATS` or use `JsonNode.isFloatingPointNumber()` |
-| **C#** | `System.Text.Json` maps JSON numbers: integers to `long`, decimals to `double` — preserves `.0` presence via `GetRawText()` | Use `JsonElement.GetRawText()` and check for decimal point in source |
-| **Ruby** | `JSON.parse` maps integers to `Integer` and floats to `Float` by default — correctly preserves distinction | No special config needed |
-| **Rust** | `serde_json` preserves `i64` vs `f64` distinction by default when using typed deserialization | Use `serde_json::Value` which distinguishes `Number` with integer vs. float variants |
-
-**Normative rule:** For SDKs whose host language JSON parser conflates `0` and `0.0` by default,
-the conformance harness MUST configure the parser to preserve the literal-source `int` vs.
-`float` distinction. The fixture input JSON `{"d": 0.0}` MUST be parsed such that `d` is
-treated as a float, not an integer. This is a harness configuration requirement — the SDK's
-own `extractSchema` method operates on the host language's native types and MUST use the
+**Normative rule:** For SDKs whose host-language JSON parser conflates `0` and `0.0` by default,
+the conformance harness MUST preserve the literal-source `int` vs. `float` distinction when
+parsing fixture input: `{"d": 0.0}` MUST be parsed such that `d` is treated as a float, not an
+integer. *How* this is achieved is an implementation detail left to the SDK author. The SDK's own
+`extractSchema` method operates on the host language's native types and MUST use the
 declared/runtime type as the authority.
 
 #### 9.3.2 Recursion Depth

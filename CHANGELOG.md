@@ -22,7 +22,7 @@ spec version declaration patterns.
 
 ---
 
-## [1.0.0] - 2026-05-25 `[WIRE]`
+## [1.0.0] - 2026-06-24 `[WIRE]`
 
 Initial publication of the `avohq/spec-first-inspector-server-sdk` spec.
 
@@ -37,7 +37,6 @@ appears.
 | `SPEC.md` | Full normative prose specification (RFC 2119 language, 13 sections) |
 | `AGENTS.md` | AI-agent SDK generation guide: checklist, reading order, conformance, definition of done (25 ACs) |
 | `openapi.yaml` | OpenAPI 3.1 document for the Inspector HTTP API |
-| `schemas/base-body.json` | JSON Schema: base request body fields |
 | `schemas/event-batch.json` | JSON Schema: top-level request array |
 | `schemas/event-body.json` | JSON Schema: event body |
 | `schemas/event-property-plain.json` | JSON Schema: property object |
