@@ -30,17 +30,11 @@
 
 ## 1. Problem Statement and Repo Purpose
 
-Avo receives requests for Inspector SDKs in languages beyond Node.js (Ruby, Python, Rust, Scala,
-C#, Go, etc.). Staffing and maintaining N independent hand-written implementations across language
-ecosystems is prohibitive. The Inspector HTTP wire protocol is stable and well-understood; the
-correct long-term strategy is to distribute one canonical specification plus a conformance suite,
-and let customers (or their AI coding agents) generate conformant SDKs on demand.
+This repository is one canonical specification plus a conformance suite that lets customers (or
+their AI coding agents) generate conformant backend Inspector SDKs on demand.
 
-This repository, `avohq/spec-first-inspector-server-sdk`, serves as the **single source of truth**
-for all future server-side Inspector SDK implementations. It is Avo's first "AI-native open source"
-artifact: optimized for AI agent consumption, not hand-written SDK maintenance.
-
-A customer with a Ruby ask MUST be able to point their AI agent at this repository, follow the
+It is the **single source of truth** for all future server-side Inspector SDK implementations: a
+customer with a Ruby ask MUST be able to point their AI agent at this repository, follow the
 instructions in `AGENTS.md`, and produce a working, conformant Ruby Inspector SDK in under one hour.
 
 ---
@@ -203,8 +197,7 @@ fails or times out. See Section 7.5 (Error Taxonomy) for the full table.
 
 ```typescript
 extractSchema(
-  eventProperties: { [propName: string]: any },
-  shouldLogIfEnabled?: boolean   // internal default: true
+  eventProperties: { [propName: string]: any }
 ): Array<{ propertyName: string; propertyType: string; children?: any }>
 ```
 
@@ -516,6 +509,26 @@ OR any list type (including `"list(string)"`, `"list(int)"`, `"list(float)"`, `"
 This is a heterogeneous, recursive union type: element = type string | SchemaEntry object | array
 of (element). In statically-typed languages (Go, Rust, Java), implementations MUST use a union/sum
 type or interface/any type for `children` elements.
+
+**Example.** The event `{ "user": { "id": 1, "tags": ["a", "b"] }, "scores": [1, 2] }` extracts to:
+
+```json
+[
+  {
+    "propertyName": "user",
+    "propertyType": "object",
+    "children": [
+      { "propertyName": "id", "propertyType": "int" },
+      { "propertyName": "tags", "propertyType": "list(string)", "children": ["string"] }
+    ]
+  },
+  { "propertyName": "scores", "propertyType": "list(int)", "children": ["int"] }
+]
+```
+
+This shows the two most common `children` shapes — SchemaEntry objects for `object` properties and
+type-string arrays for lists of primitives — nested recursively. See Section 9 for the full
+algorithm (including the `list(object)` case) and Section 10 for golden fixtures.
 
 #### 7.3.5 Request Body Compression (gzip)
 
