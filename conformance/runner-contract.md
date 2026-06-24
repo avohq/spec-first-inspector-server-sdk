@@ -84,13 +84,15 @@ The input envelope is a JSON object with the following fields.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `suite` | string | YES — injected by runner | Suite identifier: `"schema-extraction"`, `"wire-protocol"`, or `"error-handling"`. NOT present in fixture files; the suite runner MUST inject this field from the parent directory name before passing the envelope to the harness. |
-| `fixture_id` | string | YES | Unique identifier for this fixture (e.g., `"wire-1"`, `"fixture-3"`). MUST be echoed in the output envelope. |
+| `suite` | string | YES — injected by runner | Suite identifier: `"schema-extraction"`, `"wire-protocol"`, `"error-handling"`, or `"batching"`. NOT present in fixture files; the suite runner MUST inject this field from the parent directory name before passing the envelope to the harness. |
+| `fixture_id` | string | YES | Unique identifier for this fixture (e.g., `"wire-1"`, `"fixture-3"`, `"batch-1"`). MUST be echoed in the output envelope. |
 | `constructor` | object | YES — except `schema-extraction` | Options passed verbatim to the `AvoInspector` constructor. Absent for `schema-extraction` fixtures; the harness MUST NOT require it when `suite` is `"schema-extraction"`. |
-| `operation` | string | YES — except `schema-extraction` | SDK method to invoke: `"extractSchema"` or `"trackSchemaFromEvent"`. Absent for `schema-extraction` fixtures; the harness MUST call `extractSchema()` directly when `suite` is `"schema-extraction"`. |
-| `input` | object | YES | Operation-specific input payload. For `schema-extraction`, the entire `input` object IS the `eventProperties` argument. For other suites, shape depends on `operation` (see below). |
+| `operation` | string | YES — except `schema-extraction` | SDK method to invoke: `"extractSchema"`, `"trackSchemaFromEvent"`, or `"sequence"` (batching suite — see below). Absent for `schema-extraction` fixtures; the harness MUST call `extractSchema()` directly when `suite` is `"schema-extraction"`. |
+| `input` | object | YES — except `sequence` | Operation-specific input payload. For `schema-extraction`, the entire `input` object IS the `eventProperties` argument. For other suites, shape depends on `operation` (see below). Replaced by `steps` when `operation` is `"sequence"`. |
+| `steps` | array | YES — for `sequence` | Ordered list of actions run against a single instance in the `batching` suite. See [Multi-event sequence mode](#multi-event-sequence-mode-operation-sequence). |
 | `precondition` | object | NO | State to apply to the SDK instance before invoking the operation. See [`precondition`](#precondition). |
-| `mock_response` | object or null | NO | Response configuration for the mock server. Present only when a wire-protocol HTTP call is expected. `null` means no HTTP call is expected. |
+| `mock_response` | object or null | NO | Response configuration for the mock server (a single response reused for every POST). Present only when an HTTP call is expected. `null` means no HTTP call is expected. |
+| `mock_responses` | array | NO | Per-call responses applied to POSTs in receipt order (use instead of `mock_response` when one sequence makes several calls that need different responses). If shorter than the number of calls, the last entry is reused. |
 
 ### `constructor` object
 
@@ -131,6 +133,66 @@ argument (no wrapper object). Consistent with steps 3 and the `input` row above:
 
 `streamId` is optional. When absent, the harness MUST call `trackSchemaFromEvent` without the
 third argument (not with `undefined` explicitly, unless the language requires it).
+
+### Multi-event sequence mode (`operation: "sequence"`)
+
+The `batching` suite uses `operation: "sequence"` to run an ordered series of actions against a
+**single** `AvoInspector` instance within one harness invocation. This is what makes multi-event
+batching behaviors — size-trigger flush, `flush()` drain, `destroy()` discard, `maxQueueSize` FIFO
+overflow, mixed-stream batches, and non-200 no-requeue — automatically assertable; they cannot be
+expressed by the single-event modes above. Instead of `input`, the envelope carries an ordered
+`steps` array:
+
+```json
+{
+  "suite": "batching",
+  "fixture_id": "batch-1",
+  "constructor": { "apiKey": "test-key", "env": "staging", "version": "1.0.0", "appName": "TestApp", "batchSize": 3 },
+  "operation": "sequence",
+  "steps": [
+    { "action": "track", "eventName": "E1", "eventProperties": { "a": 1 }, "streamId": "s1" },
+    { "action": "track", "eventName": "E2", "eventProperties": { "b": 2 }, "streamId": "s2" },
+    { "action": "track", "eventName": "E3", "eventProperties": { "c": 3 }, "streamId": "s1" },
+    { "action": "track", "eventName": "E4", "eventProperties": { "d": 4 }, "streamId": "s2" },
+    { "action": "flush" }
+  ],
+  "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } }
+}
+```
+
+Each element of `steps` is one action, executed in order on the same instance:
+
+| `action` | Harness behavior |
+|---|---|
+| `"track"` | Call `trackSchemaFromEvent(eventName, eventProperties, streamId?)` and await it. Same `eventProperties` / `streamId` semantics as the single-event `trackSchemaFromEvent` mode. |
+| `"flush"` | Call `flush(timeoutMs?)` and await it. |
+| `"destroy"` | Call `destroy()`. |
+
+**Determinism rules (REQUIRED):**
+
+- The harness MUST execute the steps strictly in order and MUST await each `track` / `flush` before
+  starting the next step.
+- The harness MUST NOT perform any implicit flush of its own — the buffer's terminal state is
+  exactly what the steps left it. A fixture that expects events to remain buffered simply omits a
+  trailing `flush` / `destroy` and asserts `expected_request_count: 0`.
+- Because `trackSchemaFromEvent` resolves at enqueue (SPEC.md §4.2, §7.5.2), a size-triggered send
+  is dispatched but **not** awaited by the triggering `track`. Therefore **a fixture that expects an
+  HTTP call to be observed MUST end with a `flush` step**: `flush()` awaits all in-flight sends (and
+  drains any remaining buffer), which is what makes the captured-request set deterministic with no
+  keepalive timer (SPEC.md §11).
+
+**Assertions** (performed by the suite runner after the harness exits, against the mock server):
+
+| Field | Assertion |
+|---|---|
+| `expected_request_count` | The number of HTTP POSTs captured MUST equal this value. |
+| `expected_request_bodies` | An ordered array of expected batch bodies; each element is itself an array of event objects (one batch = one HTTP call). Each event is format-validated for placeholder fields (`<uuid-v4>`, `<iso8601>`, `<semver>`, `<sdk-platform>`) exactly as in the wire-protocol suite. Batches MUST match in order. |
+
+**Output envelope.** For a sequence, `actual` is an array with one entry per step —
+`{ "action": "track"|"flush"|"destroy", "outcome": "resolve"|"reject", "value": <resolved value or rejection reason> }`
+— and top-level `outcome` is `"resolve"` unless a harness-level error occurred (in which case
+`passed` is `false` and `error` is set). A `destroy` step reports `outcome: "resolve"`,
+`value: null`.
 
 ### `precondition`
 
@@ -437,8 +499,11 @@ submitting conformance results.
       the mock server URL when this variable is set.
 - [ ] Harness exits with code `0` on success, `1` on a harness/runtime invocation failure
       (never to signal an assertion result), and `2` on configuration/envelope errors.
-- [ ] Harness handles both `operation` values: `"extractSchema"` and
-      `"trackSchemaFromEvent"`.
+- [ ] Harness handles all `operation` values: `"extractSchema"`, `"trackSchemaFromEvent"`, and
+      `"sequence"`.
+- [ ] Harness handles the `"sequence"` operation (batching suite): runs `steps` in order on one
+      instance, awaits each `track` / `flush`, performs no implicit flush, and honors per-call
+      `mock_responses`.
 - [ ] Harness does not persist state between invocations — each run constructs a fresh
       `AvoInspector` instance.
 
@@ -453,6 +518,7 @@ An SDK is considered conformant when:
 - All non-OPTIONAL fixtures in the `schema-extraction` suite pass.
 - All fixtures in the `wire-protocol` suite pass.
 - All fixtures in the `error-handling` suite pass.
+- All fixtures in the `batching` suite pass.
 
 ### Reporting format
 

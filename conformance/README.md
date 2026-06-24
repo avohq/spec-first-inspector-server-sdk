@@ -17,6 +17,9 @@ conformance/
   error-handling/
     README.md                      (error handling suite docs)
     fixtures.json                  (error handling fixtures)
+  batching/
+    README.md                      (batching suite docs)
+    fixtures.json                  (5 golden fixtures: batch-1 through batch-5)
 ```
 
 ## Suites
@@ -49,6 +52,15 @@ constructor validation errors. All fixtures in this suite are REQUIRED for a con
 See `error-handling/README.md` for details and `error-handling/fixtures.json` for the
 machine-readable fixtures.
 
+### batching
+
+Tests multi-event batching (SPEC.md §12) by driving a single instance through an ordered sequence of
+`track` / `flush` / `destroy` actions (`operation: "sequence"`) and asserting the captured HTTP
+calls. Requires the mock server and `AVO_INSPECTOR_MOCK_ENDPOINT`. All fixtures use `env: "staging"`
+so `batchSize` is honored.
+
+See `batching/README.md` for details and `batching/fixtures.json` for the machine-readable fixtures.
+
 ## Runner Contract
 
 The conformance suite is driven via a language-agnostic stdin/stdout JSON protocol. SDK authors
@@ -67,28 +79,24 @@ to stdout, and exits with code `0` (pass), `1` (fail), or `2` (harness config er
 
 ## Batching
 
-Batching is part of the v1 contract (SPEC.md §12). It cannot be fully automated under the
-single-invocation harness, which cannot enqueue events across calls or model "track N events → one
-batched send." Automated coverage is therefore limited to:
+Batching (SPEC.md §12) is exercised by the dedicated **`batching` suite** (`operation: "sequence"`),
+which drives one instance through an ordered series of `track` / `flush` / `destroy` actions and
+asserts the resulting HTTP calls — see [`batching/README.md`](./batching/README.md). The `dev`
+wire-protocol fixtures (`wire-1`–`wire-7`, `env: "dev"`) additionally cover the immediate-send
+(`batchSize == 1`) path, and `wire-8` covers buffered-not-sent.
 
-- The `dev` fixtures (`wire-1`–`wire-7`, all `env: "dev"`) run with `batchSize` forced to 1, so they
-  exercise the immediate-send (`batchSize == 1`) path.
-- `wire-8` (`env: "staging"`, `batchSize: 30`) asserts that a single tracked event is buffered, not
-  sent (0 HTTP calls before flush).
+**Automated by the `batching` suite** (`batch-1`–`batch-5`): size-trigger flush, `flush()` drain of a
+partial batch, `destroy()` discard, `maxQueueSize` FIFO overflow, mixed-stream batches, and non-200
+no-requeue.
 
-The remaining batching behaviors MUST be verified manually (or via the SDK's own integration tests):
+The following behaviors are not yet expressible as deterministic single-process fixtures and MUST be
+verified manually (or via the SDK's own integration tests):
 
 | Scenario | Expectation |
 |---|---|
-| Track `batchSize` events | Exactly 1 HTTP call containing all `batchSize` events as one array |
-| Track 1 event, wait > `batchFlushSeconds` | The scheduled/idle flush sends the partial batch (long-running, non-serverless) |
-| Track events then call `flush()` | `flush()` force-sends the pending batch and resolves |
-| Track events then call `destroy()` | The pending batch is discarded unsent; no HTTP call |
-| Buffer exceeds `maxQueueSize` | Oldest events dropped (FIFO); drop count logged (no contents) |
-| Send fails transiently (network/timeout) | Batch re-queued at the front; retried on next flush; `messageId` unchanged |
-| Send returns non-200 | Batch NOT re-queued; status logged |
-| Batch mixes `streamId`/`eventName` | Each event self-contained; `streamId`/`eventName` per element |
-| Concurrent enqueue + flush | No lost, duplicated, or torn events (atomic swap-and-clear) |
+| Track 1 event, wait > `batchFlushSeconds` | The scheduled/idle flush sends the partial batch (long-running, non-serverless); needs a controllable clock |
+| Send fails transiently (network/timeout) | Batch re-queued at the front; retried on next flush; `messageId` unchanged; needs the mock to simulate a dropped connection |
+| Concurrent enqueue + flush | No lost, duplicated, or torn events (atomic swap-and-clear); needs real concurrency |
 
 ## Out of Scope in v1
 

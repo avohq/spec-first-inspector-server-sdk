@@ -14,6 +14,7 @@ Node.js ES module (`.mjs`). Depends on `ajv` (draft 2020-12 build, imported from
 - Resolves two validators: `SchemaEntry` (from `schema-entry.json`) and `EventPropertyPlain` (from `event-property-plain.json`).
 - **schema-extraction suite** — validates that every element of each fixture's `expected[]` array is a valid `SchemaEntry`.
 - **wire-protocol and error-handling suites** — validates that every `eventProperties[]` element inside each `expected_request_body[]` entry is a valid `EventPropertyPlain`. **Deliberately does NOT validate the full event body**, whose `messageId` / `createdAt` are placeholder values that would not satisfy the schemas.
+- **batching suite** — validates that every `eventProperties[]` element of every event in every batch of `expected_request_bodies[]` is a valid `EventPropertyPlain`.
 - Absent arrays are coerced to empty via `?? []`, so a fixture lacking the relevant field is skipped, not failed.
 
 ## Non-functional requirements

@@ -39,6 +39,9 @@ Read every file in this order before writing any code. Do not skip files.
    wire-8). Your `trackSchemaFromEvent` implementation MUST pass all of these.
 8. **`conformance/error-handling/fixtures.json`** — Error-handling fixtures. Your implementation
    MUST pass all of these (REQUIRED suite).
+9. **`conformance/batching/fixtures.json`** — Batching golden fixtures (`batch-1` through
+   `batch-5`), driven via the `operation: "sequence"` multi-event mode. Your batching
+   implementation MUST pass all of these.
 
 ---
 
@@ -208,10 +211,13 @@ An SDK is conformant when:
 - All 13 `schema-extraction` suite fixtures pass.
 - All 8 `wire-protocol` suite fixtures pass.
 - All `error-handling` suite fixtures pass.
+- All 5 `batching` suite fixtures pass.
 
-Multi-event batching cannot be fully automated under the single-invocation harness; `wire-8` covers
-the no-premature-flush path automatically, and the remaining batching behaviors are verified via the
-manual matrix in `conformance/README.md`.
+The `batching` suite (`operation: "sequence"`) automates most multi-event behavior — size-trigger
+flush, `flush()` drain, `destroy()` discard, `maxQueueSize` FIFO overflow, mixed-stream batches, and
+non-200 no-requeue. A few behaviors (time/idle flush, transient-failure re-queue, concurrency) are
+not deterministically expressible as fixtures and are verified via the manual matrix in
+`conformance/README.md`.
 
 ---
 

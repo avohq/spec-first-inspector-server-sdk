@@ -70,6 +70,23 @@ for (const rel of [
   }
 }
 
+// batching: expected_request_bodies is an array of batches; each batch is an array of
+// event bodies. Every eventProperties[] element of every event is an EventPropertyPlain.
+const batching = JSON.parse(
+  readFileSync(join(root, "conformance/batching/fixtures.json"), "utf8"),
+);
+for (const f of batching) {
+  (f.expected_request_bodies ?? []).forEach((batch, b) => {
+    (batch ?? []).forEach((body, e) => {
+      (body.eventProperties ?? []).forEach((prop, i) => {
+        if (!validateProp(prop)) {
+          fail("batching", f.fixture_id, `expected_request_bodies[${b}][${e}].eventProperties[${i}]`, validateProp);
+        }
+      });
+    });
+  });
+}
+
 if (failures > 0) {
   console.error(`\n${failures} fixture element(s) failed schema validation.`);
   process.exit(1);

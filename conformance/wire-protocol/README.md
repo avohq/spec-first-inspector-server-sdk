@@ -16,12 +16,13 @@ and correctly handles `streamId` edge cases.
 | `wire-7` | Small body (< 1024 bytes) — MUST be sent uncompressed (no `Content-Encoding` header) |
 | `wire-8` | Batching — `env: staging` + `batchSize: 30`; one tracked event is buffered, not sent (0 HTTP calls before flush) (SPEC.md §12) |
 
-> **Batching coverage.** The existing `dev` fixtures (`wire-1`–`wire-7`, all `env: "dev"`) run with
+> **Batching coverage.** The `dev` fixtures (`wire-1`–`wire-7`, all `env: "dev"`) run with
 > `batchSize` forced to 1, so they also serve as the automated check for the immediate-send
-> (`batchSize == 1`) batching path. `wire-8` is the only multi-event batching behavior the
-> single-invocation harness can assert automatically (buffered, not sent). The remaining batching
-> behaviors — `flush()` drains a partial batch, size/time flush, `maxQueueSize` overflow, re-queue —
-> are verified via the manual matrix in [`../README.md`](../README.md).
+> (`batchSize == 1`) batching path, and `wire-8` covers buffered-not-sent. Multi-event batching
+> (size-trigger flush, `flush()` drain, `destroy()` discard, `maxQueueSize` overflow, non-200
+> no-requeue) is automated by the dedicated [`batching` suite](../batching/README.md); the few
+> remaining behaviors (time/idle flush, transient re-queue, concurrency) are in the manual matrix in
+> [`../README.md`](../README.md).
 
 ## How It Works
 
