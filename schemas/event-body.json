@@ -13,6 +13,7 @@
     "libPlatform",
     "messageId",
     "streamId",
+    "sessionId",
     "createdAt",
     "samplingRate",
     "type",
@@ -58,6 +59,11 @@
       "type": "string",
       "description": "Caller-supplied streamId, or empty string if none provided."
     },
+    "sessionId": {
+      "type": "string",
+      "const": "",
+      "description": "Always empty string for server SDKs. Required by the Inspector ingestion pipeline."
+    },
     "createdAt": {
       "type": "string",
       "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
@@ -86,11 +92,12 @@
       "description": "Extracted schema — array of plain property objects."
     }
   },
-  "$comment": "Unknown extra fields are permitted — the Inspector backend ignores fields it does not read (write-api consumes only named keys). Only sessionId and trackingId are forbidden (SPEC.md §7.3.1, §13). This matches openapi.yaml EventBody.",
+  "$comment": "Unknown extra fields are permitted — the Inspector backend ignores fields it does not read (write-api consumes only named keys). sessionId is REQUIRED and MUST be the empty string for server SDKs (the ingestion pipeline drops events that omit it). trackingId, visitorId, and userId are forbidden (SPEC.md §3.3, §7.3.1). This matches openapi.yaml EventBody.",
   "not": {
     "anyOf": [
-      { "required": ["sessionId"] },
-      { "required": ["trackingId"] }
+      { "required": ["trackingId"] },
+      { "required": ["visitorId"] },
+      { "required": ["userId"] }
     ]
   }
 }

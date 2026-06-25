@@ -1,6 +1,6 @@
 # SPEC.md — Avo Inspector Server SDK Specification
 
-**Version:** 1.0.0
+**Version:** 2.0.0
 **Status:** Normative
 **Repository:** `avohq/spec-first-inspector-server-sdk`
 
@@ -87,13 +87,19 @@ server-side-only requirements; browser/client-side concerns do not apply.
   buffered events and makes no durability guarantee; callers that require delivery MUST `flush()`
   before exit (see Sections 4.6 and 12).
 
-### 3.3 No sessionId or visitorId
+### 3.3 sessionId, visitorId, and userId
 
-- Implementations MUST NOT include `sessionId`, `visitorId`, or `userId` in the wire body.
+- `sessionId` MUST be present in the wire body and MUST be the empty string `""` for server SDKs.
+  The Inspector backend ingestion pipeline silently DROPS events whose wire body omits `sessionId`
+  (the request still returns `200 {"success":true}`, but the event never appears on the dashboard).
+  Server SDKs do not model end-user sessions, so the value is always `""`, but the field MUST be
+  present.
+- Implementations MUST NOT include `visitorId` or `userId` in the wire body.
 - The Inspector server SDK does not model end-user sessions.
 - The `streamId` field in the wire body carries the caller-supplied stream id (or `""` if not
   provided). It is NOT a generated session identifier.
-- AI coding agents generating SDKs MUST NOT add browser-style session tracking.
+- AI coding agents generating SDKs MUST NOT add browser-style session tracking; `sessionId` is
+  always sent as the empty string `""`.
 
 ### 3.4 Flush and Shutdown
 
@@ -432,6 +438,7 @@ across a batch but are repeated on every element; the wire format has no shared 
     "libPlatform": "ruby",
     "messageId": "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
     "streamId": "string",
+    "sessionId": "",
     "createdAt": "2026-05-25T12:00:00.000Z",
     "samplingRate": 1.0,
     "type": "event",
@@ -455,12 +462,14 @@ These fields MUST be present on every event object:
 | `libPlatform` | string | Identifies the SDK platform/language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). MUST be a non-empty string. |
 | `messageId` | string | UUID v4 (random). MUST be unique per event. See Section 8. |
 | `streamId` | string | The caller-supplied stream id, or `""` if none provided. |
+| `sessionId` | string | Always the empty string `""` for server SDKs. MUST be present (required by the Inspector ingestion pipeline, which drops events that omit it). Server SDKs do not model end-user sessions. See Section 3.3. |
 | `createdAt` | string | ISO 8601 UTC timestamp at event send time (e.g., `"2026-05-25T12:00:00.000Z"`). A 3-digit millisecond suffix (e.g., `.000Z`) MUST be present; the value of those digits is not constrained. |
 | `samplingRate` | number | Current sampling rate `[0.0, 1.0]`. Initial value `1.0`. Updated from server response. |
 
-> **Note on omitted fields:** `trackingId` and `sessionId` MUST NOT be sent in v1. They are
-> dead weight from the browser SDK and carry no information for server-side use cases.
-> Implementations MUST NOT include these fields.
+> **Note on omitted fields:** `trackingId` MUST NOT be sent in v1. It is dead weight from the
+> browser SDK and carries no information for server-side use cases. Implementations MUST NOT
+> include it. (`sessionId` is NOT omitted — it is required and MUST be sent as the empty string
+> `""`; see Section 3.3.)
 
 #### 7.3.2 Event-Specific Fields (`type: "event"`)
 
@@ -698,8 +707,8 @@ buffered events (see §3.2, §12.6) and performs no retry.
 - User-supplied string. No generation logic on the SDK side — it is whatever the caller passes.
 - Implementations MUST pass `streamId` through as-is without modification.
 - If absent or empty, `streamId` in the wire body MUST be `""` (empty string).
-- `trackingId` and `sessionId` MUST NOT be sent. They have been removed from the server SDK
-  wire format.
+- `trackingId` MUST NOT be sent. `sessionId` MUST be sent as an empty string `""` (see Section 3.3
+  and Section 7.3.1). `visitorId` and `userId` MUST NOT be sent.
 
 ---
 
@@ -1373,5 +1382,5 @@ manifest metadata, or a `SPEC_VERSION` constant).
 
 ---
 
-*Spec version: 1.0.0 — Initial publication.*
+*Spec version: 2.0.0 — `sessionId` is now a required wire field (empty string for server SDKs).*
 *Last updated: 2026-06-24.*

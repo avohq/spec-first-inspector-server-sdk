@@ -140,7 +140,7 @@ function deepEqual(a, b) {
 // Fields that MUST NOT appear in any wire body (SPEC §3.3, §7.3.1). Enforced by
 // the runner so an SDK that emits them fails conformance even though no fixture
 // "expects" them.
-const FORBIDDEN_WIRE_FIELDS = new Set(["sessionId", "trackingId", "visitorId", "userId"]);
+const FORBIDDEN_WIRE_FIELDS = new Set(["trackingId", "visitorId", "userId"]);
 
 /**
  * Match one captured event body against an expected body, applying placeholder
