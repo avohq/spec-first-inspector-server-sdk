@@ -110,7 +110,7 @@ All four fields are **required** on every event sent. A missing field is a confo
 | `operation` | YES | SDK method to invoke: `"trackSchemaFromEvent"`. |
 | `input` | YES | Operation-specific input. `streamId` is optional; when absent, `streamId` MUST be `""` in the wire body. |
 | `precondition` | NO | State to establish before invoking the operation. Harness MUST apply `samplingRate` override via internal setter or test hook before calling the operation. |
-| `mock_response` | NO | Response the mock server returns. `null` means no mock server is started (use when no HTTP call is expected). |
+| `mock_response` | NO | Response the mock server returns. `null` means no HTTP call is expected — the mock server is still started and the SDK still pointed at it, so any erroneous send is captured locally (fail-closed) and the runner asserts zero requests. |
 | `expected_request_body` | NO | Array of expected JSON request bodies. Use when one or more HTTP calls are expected. |
 | `expected_request_headers` | NO | Object asserting request headers (case-insensitive names). A string value means the header MUST be present and equal; `null` means the header MUST be absent. See [runner-contract.md](../runner-contract.md#expected_request_headers-assertions). |
 | `expected_request_count` | NO | Expected number of HTTP calls. `0` asserts no HTTP call was made. When `expected_request_body` is present, count is implied by array length. |

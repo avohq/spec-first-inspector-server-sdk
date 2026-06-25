@@ -374,10 +374,14 @@ SDKs MUST send POST requests directly to this URL.
 expose this variable in their public documentation; it is documented here for harness
 implementors only.
 
-**Security requirement:** SDKs MUST gate `AVO_INSPECTOR_MOCK_ENDPOINT` behind a test-only
-build flag, debug build, or environment-restriction check. Production builds MUST NOT honor
-this variable. Honoring it in production would allow HTTP downgrade attacks by redirecting
-traffic to an attacker-controlled endpoint.
+**Security requirement:** the gate that honors `AVO_INSPECTOR_MOCK_ENDPOINT` MUST be **fail-closed
+(default-deny)**: production builds MUST ignore the variable unconditionally. An instance
+constructed with `env: "prod"` MUST NOT honor it regardless of the surrounding process environment;
+gating on the SDK's own `env` is the recommended mechanism, and a test-only build flag or debug
+build is also acceptable. SDKs MUST NOT gate on an ambient variable that defaults to "non-production"
+when unset (e.g. `NODE_ENV !== "production"`), which fails open. Honoring the variable in production
+would allow an HTTP downgrade to an attacker-controlled endpoint (leaking the `apiKey`). See
+SPEC.md §7.1.
 
 ---
 
