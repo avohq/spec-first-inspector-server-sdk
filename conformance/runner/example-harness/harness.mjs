@@ -59,17 +59,22 @@ function applyPrecondition(inspector, precondition, fixtureId) {
   }
 }
 
+// Call trackSchemaFromEvent with the contract-correct arity: omit the third
+// argument entirely when no streamId is provided, so SDKs that inspect
+// arguments.length observe the right invocation shape.
+function callTrack(inspector, eventName, eventProperties, streamId) {
+  return streamId === undefined
+    ? inspector.trackSchemaFromEvent(eventName, eventProperties)
+    : inspector.trackSchemaFromEvent(eventName, eventProperties, streamId);
+}
+
 async function runSequence(inspector, steps, fixtureId) {
   if (!Array.isArray(steps)) configError(fixtureId, "sequence operation requires a steps array");
   const actual = [];
   for (const step of steps) {
     const action = step && step.action;
     if (action === "track") {
-      const value = await inspector.trackSchemaFromEvent(
-        step.eventName,
-        step.eventProperties,
-        step.streamId,
-      );
+      const value = await callTrack(inspector, step.eventName, step.eventProperties, step.streamId);
       actual.push({ action: "track", outcome: "resolve", value });
     } else if (action === "trackN") {
       const count = step.count;
@@ -157,7 +162,7 @@ async function main() {
       let outcome = "resolve";
       let actual;
       try {
-        actual = await inspector.trackSchemaFromEvent(input.eventName, input.eventProperties, input.streamId);
+        actual = await callTrack(inspector, input.eventName, input.eventProperties, input.streamId);
       } catch (reason) {
         outcome = "reject";
         actual = reason;

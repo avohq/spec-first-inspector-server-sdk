@@ -115,6 +115,11 @@ function deepEqual(a, b) {
   return false;
 }
 
+// Fields that MUST NOT appear in any wire body (SPEC §3.3, §7.3.1). Enforced by
+// the runner so an SDK that emits them fails conformance even though no fixture
+// "expects" them.
+const FORBIDDEN_WIRE_FIELDS = new Set(["sessionId", "trackingId", "visitorId", "userId"]);
+
 // Match one captured event body against an expected body, applying placeholder
 // format-validation for any placeholder-valued expected field.
 function matchBody(expected, actual) {
@@ -122,6 +127,11 @@ function matchBody(expected, actual) {
     return deepEqual(expected, actual);
   }
   if (actual === null || typeof actual !== "object" || Array.isArray(actual)) return false;
+
+  // A wire body carrying any forbidden identifier field is a hard failure.
+  for (const key of Object.keys(actual)) {
+    if (FORBIDDEN_WIRE_FIELDS.has(key)) return false;
+  }
 
   // Every expected key must be present and match. Extra actual keys are tolerated
   // (the Inspector backend ignores unknown fields; schemas/event-body.json permits
@@ -274,15 +284,16 @@ async function runFixture(suite, fixture, harnessCmd, mock) {
     return { fixtureId, failures };
   }
 
-  // 5. Parse the single output envelope (last non-empty stdout line).
+  // 5. Parse the single output envelope. The contract reserves stdout for
+  // exactly one JSON line; diagnostics belong on stderr. Reject any other count.
   const lines = res.stdout.split("\n").map((l) => l.trim()).filter(Boolean);
-  if (lines.length === 0) {
-    failures.push(`no stdout output; stderr: ${res.stderr.trim().slice(0, 200)}`);
+  if (lines.length !== 1) {
+    failures.push(`stdout must contain exactly one JSON line, got ${lines.length}; stderr: ${res.stderr.trim().slice(0, 200)}`);
     return { fixtureId, failures };
   }
   let output;
   try {
-    output = JSON.parse(lines[lines.length - 1]);
+    output = JSON.parse(lines[0]);
   } catch (err) {
     failures.push(`output envelope parse failed: ${err.message}`);
     return { fixtureId, failures };

@@ -234,8 +234,9 @@ export class AvoInspector {
       }
 
       // §7.7 per-event sampling at enqueue, BEFORE buffering.
-      // random in [0.0, 1.0); drop when random > samplingRate.
-      if (Math.random() > this.samplingRate) {
+      // Math.random() is in [0.0, 1.0); drop when random >= samplingRate so that
+      // samplingRate 0.0 ALWAYS drops (an exact-zero draw must not slip through).
+      if (Math.random() >= this.samplingRate) {
         return eventSchema; // dropped silently; not buffered, no network call.
       }
 

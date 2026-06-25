@@ -119,9 +119,11 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 ### Error Handling and Resilience
 
 - [ ] Non-200 HTTP responses MUST resolve the `trackSchemaFromEvent` promise (MUST NOT reject).
-  Resolved value is ALWAYS `[]` on non-200 — even when `eventProperties` was non-empty
-  (SPEC.md §4.2 step 4, §7.4, §7.5). The `error-2` fixture (non-empty props + 400 → `[]`)
-  is the source of truth.
+  In immediate-send mode (`batchSize == 1`, always true in `dev`) the resolved value is `[]` on
+  non-200 — even when `eventProperties` was non-empty; the `error-2` fixture (non-empty props +
+  400 → `[]`) is the source of truth. When `batchSize > 1` the send is decoupled, so the promise
+  resolves with the extracted schema at enqueue regardless of the batch's HTTP outcome (see the
+  Batching section; SPEC.md §4.2, §7.5, §7.5.2).
 - [ ] Network timeout (10 s) and network errors are swallowed inside the internal send handler.
   `trackSchemaFromEvent` MUST resolve with the extracted event schema even when the HTTP call
   fails or times out (SPEC.md §7.5, §7.6).

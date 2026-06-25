@@ -1,187 +1,368 @@
 {
-  "$comment": "Machine-readable map of SPEC.md / runner-contract.md behaviors to the conformance fixture(s) that gate them. 'automated' entries are asserted by `npm run conformance:run` (the suite-runner drives the harness and asserts captured mock traffic). 'manual' entries are SHOULD-level behaviors that need a controllable clock or a connection-drop mock and are NOT covered by the 30 fixtures (see conformance/README.md).",
+  "$comment": "Machine-readable map of SPEC.md / runner-contract.md behaviors to the conformance fixture(s) that gate them. \"automated\" entries are asserted by `npm run conformance:run` (the suite-runner drives the harness and asserts captured mock traffic). \"manual\" entries are NOT covered by the 30 fixtures and must be verified out-of-band; they include BOTH SHOULD-level behaviors (e.g. time/idle flush) AND MUST-level requirements that need a controllable clock, a connection-drop mock, or a non-fixture input (e.g. the prod fail-closed mock-endpoint gate, constructor validation, process-wide logging state, typed 0.0->float). See conformance/README.md.",
   "spec_version": "1.0.0",
   "runner_contract_version": "1.0.0",
   "total_fixtures": 30,
   "automated": [
     {
       "behavior": "Schema extraction: primitive classification (boolean/int/string/float)",
-      "spec": ["SPEC.md §9.2", "SPEC.md §9.3"],
-      "fixtures": ["fixture-1", "fixture-12"]
+      "spec": [
+        "SPEC.md §9.2",
+        "SPEC.md §9.3"
+      ],
+      "fixtures": [
+        "fixture-1",
+        "fixture-12"
+      ]
     },
     {
       "behavior": "null and undefined classify as 'null'",
-      "spec": ["SPEC.md §9.3", "SPEC.md §10 Fixture 2"],
-      "fixtures": ["fixture-2"]
+      "spec": [
+        "SPEC.md §9.3",
+        "SPEC.md §10 Fixture 2"
+      ],
+      "fixtures": [
+        "fixture-2"
+      ]
     },
     {
       "behavior": "Empty/falsy values: false->boolean, 0->int, ''->string, {}->object children [], []->list(string) children []",
-      "spec": ["SPEC.md §9.3", "SPEC.md §9.3.4"],
-      "fixtures": ["fixture-3", "fixture-6"]
+      "spec": [
+        "SPEC.md §9.3",
+        "SPEC.md §9.3.4"
+      ],
+      "fixtures": [
+        "fixture-3",
+        "fixture-6"
+      ]
     },
     {
       "behavior": "Nested object: recursive children of own properties",
-      "spec": ["SPEC.md §9.2", "SPEC.md §7.3.4"],
-      "fixtures": ["fixture-4", "fixture-11", "fixture-13"]
+      "spec": [
+        "SPEC.md §9.2",
+        "SPEC.md §7.3.4"
+      ],
+      "fixtures": [
+        "fixture-4",
+        "fixture-11",
+        "fixture-13"
+      ]
     },
     {
       "behavior": "List of primitives: children is deduplicated type strings",
-      "spec": ["SPEC.md §9.2", "SPEC.md §9.3.3"],
-      "fixtures": ["fixture-5", "fixture-12"]
+      "spec": [
+        "SPEC.md §9.2",
+        "SPEC.md §9.3.3"
+      ],
+      "fixtures": [
+        "fixture-5",
+        "fixture-12"
+      ]
     },
     {
       "behavior": "Heterogeneous list: propertyType from first element; children = mapping() per element after removeDuplicates",
-      "spec": ["SPEC.md §9.2", "SPEC.md §9.3.4", "SPEC.md §10 Fixture 7/9"],
-      "fixtures": ["fixture-7", "fixture-9"]
+      "spec": [
+        "SPEC.md §9.2",
+        "SPEC.md §9.3.4",
+        "SPEC.md §10 Fixture 7/9"
+      ],
+      "fixtures": [
+        "fixture-7",
+        "fixture-9"
+      ]
     },
     {
       "behavior": "Null top-level eventProperties returns []",
-      "spec": ["SPEC.md §4.3", "SPEC.md §9.2"],
-      "fixtures": ["fixture-8"]
+      "spec": [
+        "SPEC.md §4.3",
+        "SPEC.md §9.2"
+      ],
+      "fixtures": [
+        "fixture-8"
+      ]
     },
     {
       "behavior": "List deduplication by value (primitives) collapses repeated types",
-      "spec": ["SPEC.md §9.3.3", "SPEC.md §10 Fixture 10"],
-      "fixtures": ["fixture-10"]
+      "spec": [
+        "SPEC.md §9.3.3",
+        "SPEC.md §10 Fixture 10"
+      ],
+      "fixtures": [
+        "fixture-10"
+      ]
     },
     {
       "behavior": "Full wire body shape + required base fields on every event",
-      "spec": ["SPEC.md §7.3", "SPEC.md §7.3.1", "SPEC.md §7.3.2"],
-      "fixtures": ["wire-1", "error-3", "batch-1"]
+      "spec": [
+        "SPEC.md §7.3",
+        "SPEC.md §7.3.1",
+        "SPEC.md §7.3.2"
+      ],
+      "fixtures": [
+        "wire-1",
+        "error-3",
+        "batch-1"
+      ]
     },
     {
       "behavior": "Format-validated fields: messageId (UUID v4 lowercase), createdAt (ISO-8601 ms), libVersion (SemVer), libPlatform (non-empty)",
-      "spec": ["SPEC.md §8.1", "SPEC.md §7.3.1", "runner-contract.md Format validation"],
-      "fixtures": ["wire-1", "wire-4", "wire-5", "wire-6", "wire-7", "error-3", "batch-1", "batch-2", "batch-4", "batch-5"]
+      "spec": [
+        "SPEC.md §8.1",
+        "SPEC.md §7.3.1",
+        "runner-contract.md Format validation"
+      ],
+      "fixtures": [
+        "wire-1",
+        "wire-4",
+        "wire-5",
+        "wire-6",
+        "wire-7",
+        "error-3",
+        "batch-1",
+        "batch-2",
+        "batch-4",
+        "batch-5"
+      ]
     },
     {
       "behavior": "Sampling drop at samplingRate=0.0 -> no enqueue, zero HTTP calls",
-      "spec": ["SPEC.md §7.7", "runner-contract.md precondition.samplingRate"],
-      "fixtures": ["wire-2"]
+      "spec": [
+        "SPEC.md §7.7",
+        "runner-contract.md precondition.samplingRate"
+      ],
+      "fixtures": [
+        "wire-2"
+      ]
     },
     {
       "behavior": "samplingRate=1.0 boundary -> event always sent (exactly 1 HTTP call)",
-      "spec": ["SPEC.md §7.7"],
-      "fixtures": ["error-1"]
+      "spec": [
+        "SPEC.md §7.7"
+      ],
+      "fixtures": [
+        "error-1"
+      ]
     },
     {
       "behavior": "Non-200 HTTP response -> promise resolves (not rejects); immediate-send (batchSize==1) resolve value is []",
-      "spec": ["SPEC.md §7.4", "SPEC.md §7.5"],
-      "fixtures": ["wire-3", "error-2"]
+      "spec": [
+        "SPEC.md §7.4",
+        "SPEC.md §7.5"
+      ],
+      "fixtures": [
+        "wire-3",
+        "error-2"
+      ]
     },
     {
       "behavior": "streamId with ':' passed through verbatim (warned, not fatal)",
-      "spec": ["SPEC.md §4.2 streamId rules", "SPEC.md §8.2"],
-      "fixtures": ["wire-4"]
+      "spec": [
+        "SPEC.md §4.2 streamId rules",
+        "SPEC.md §8.2"
+      ],
+      "fixtures": [
+        "wire-4"
+      ]
     },
     {
       "behavior": "Empty/absent streamId -> wire streamId is ''",
-      "spec": ["SPEC.md §4.2 streamId rules", "SPEC.md §8.2"],
-      "fixtures": ["wire-5", "error-3"]
+      "spec": [
+        "SPEC.md §4.2 streamId rules",
+        "SPEC.md §8.2"
+      ],
+      "fixtures": [
+        "wire-5",
+        "error-3"
+      ]
     },
     {
       "behavior": "gzip compression of bodies >= 1024 bytes (Content-Encoding: gzip); mock gunzips and the decompressed body matches",
-      "spec": ["SPEC.md §7.3.5", "SPEC.md §7.2", "runner-contract.md expected_request_headers"],
-      "fixtures": ["wire-6"]
+      "spec": [
+        "SPEC.md §7.3.5",
+        "SPEC.md §7.2",
+        "runner-contract.md expected_request_headers"
+      ],
+      "fixtures": [
+        "wire-6"
+      ]
     },
     {
       "behavior": "Small body (< 1024 bytes) sent uncompressed; no Content-Encoding header",
-      "spec": ["SPEC.md §7.3.5", "SPEC.md §7.2"],
-      "fixtures": ["wire-7"]
+      "spec": [
+        "SPEC.md §7.3.5",
+        "SPEC.md §7.2"
+      ],
+      "fixtures": [
+        "wire-7"
+      ]
     },
     {
       "behavior": "env-gated mock endpoint honored for dev/staging (fail-closed for prod); AVO_INSPECTOR_MOCK_ENDPOINT used as-is",
-      "spec": ["SPEC.md §7.1", "runner-contract.md AVO_INSPECTOR_MOCK_ENDPOINT"],
-      "fixtures": ["wire-1", "batch-1"],
+      "spec": [
+        "SPEC.md §7.1",
+        "runner-contract.md AVO_INSPECTOR_MOCK_ENDPOINT"
+      ],
+      "fixtures": [
+        "wire-1",
+        "batch-1"
+      ],
       "$note": "All fixtures construct env dev/staging, so the override is honored. The prod fail-closed branch is a security MUST verified by SDK unit tests, not by a fixture (no prod fixture exists)."
     },
     {
       "behavior": "Batching: single event with batchSize > 1 is buffered, not sent before flush (zero HTTP calls)",
-      "spec": ["SPEC.md §12.3", "SPEC.md §4.2"],
-      "fixtures": ["wire-8"]
+      "spec": [
+        "SPEC.md §12.3",
+        "SPEC.md §4.2"
+      ],
+      "fixtures": [
+        "wire-8"
+      ]
     },
     {
       "behavior": "Size-trigger flush at batchSize; a batch MAY mix streamId/eventName; trailing flush() drains remainder",
-      "spec": ["SPEC.md §12.3", "SPEC.md §12.4", "SPEC.md §7.3"],
-      "fixtures": ["batch-1"]
+      "spec": [
+        "SPEC.md §12.3",
+        "SPEC.md §12.4",
+        "SPEC.md §7.3"
+      ],
+      "fixtures": [
+        "batch-1"
+      ]
     },
     {
       "behavior": "flush() force-sends a partial batch below batchSize and resolves",
-      "spec": ["SPEC.md §4.6", "SPEC.md §12.6"],
-      "fixtures": ["batch-2"]
+      "spec": [
+        "SPEC.md §4.6",
+        "SPEC.md §12.6"
+      ],
+      "fixtures": [
+        "batch-2"
+      ]
     },
     {
       "behavior": "destroy() discards the pending batch unsent (zero HTTP calls)",
-      "spec": ["SPEC.md §4.5", "SPEC.md §11.3", "SPEC.md §12.6"],
-      "fixtures": ["batch-3"]
+      "spec": [
+        "SPEC.md §4.5",
+        "SPEC.md §11.3",
+        "SPEC.md §12.6"
+      ],
+      "fixtures": [
+        "batch-3"
+      ]
     },
     {
       "behavior": "maxQueueSize overflow drops the OLDEST buffered event (FIFO)",
-      "spec": ["SPEC.md §12.5"],
-      "fixtures": ["batch-4"]
+      "spec": [
+        "SPEC.md §12.5"
+      ],
+      "fixtures": [
+        "batch-4"
+      ]
     },
     {
       "behavior": "At-most-once: non-200 response does NOT re-queue; second batch is only the new events",
-      "spec": ["SPEC.md §7.5.2", "SPEC.md §12.5"],
-      "fixtures": ["batch-5"]
+      "spec": [
+        "SPEC.md §7.5.2",
+        "SPEC.md §12.5"
+      ],
+      "fixtures": [
+        "batch-5"
+      ]
     },
     {
       "behavior": "Concurrent enqueue + flush atomic swap-and-clear: K concurrent tracks yield exactly K distinct events, all messageIds present and unique",
-      "spec": ["SPEC.md §3.1", "SPEC.md §12.4", "runner-contract.md trackN / Concurrency fan-out"],
-      "fixtures": ["batch-6"],
+      "spec": [
+        "SPEC.md §3.1",
+        "SPEC.md §12.4",
+        "runner-contract.md trackN / Concurrency fan-out"
+      ],
+      "fixtures": [
+        "batch-6"
+      ],
       "$note": "Single-threaded Node exercises concurrent scheduling, not true parallelism (honest limitation per runner-contract); the union assertion is interleaving-invariant."
     },
     {
       "behavior": "Unordered-multiset batch matching: expected batches matched by contents, arrival order NOT asserted",
-      "spec": ["runner-contract.md expected_request_bodies"],
-      "fixtures": ["batch-1", "batch-5"]
+      "spec": [
+        "runner-contract.md expected_request_bodies"
+      ],
+      "fixtures": [
+        "batch-1",
+        "batch-5"
+      ]
     },
     {
       "behavior": "mock_response:null -> mock still started, SDK pointed at it, zero requests asserted (no escape to real endpoint)",
-      "spec": ["runner-contract.md Mock server (POST /)"],
-      "fixtures": ["wire-2", "wire-8", "batch-3"]
+      "spec": [
+        "runner-contract.md Mock server (POST /)"
+      ],
+      "fixtures": [
+        "wire-2",
+        "wire-8",
+        "batch-3"
+      ]
     }
   ],
   "manual": [
     {
       "behavior": "Time / idle scheduled flush after batchFlushSeconds (SHOULD)",
-      "spec": ["SPEC.md §12.3", "SPEC.md §11.4"],
+      "spec": [
+        "SPEC.md §12.3",
+        "SPEC.md §11.4"
+      ],
       "reason": "Needs a controllable clock; not deterministic in a single short-lived process. Verify via the SDK's own integration tests.",
       "fixtures": []
     },
     {
       "behavior": "Transient send failure (network error / timeout) drops the batch with no re-queue (at-most-once)",
-      "spec": ["SPEC.md §7.5", "SPEC.md §7.6", "SPEC.md §12.5"],
+      "spec": [
+        "SPEC.md §7.5",
+        "SPEC.md §7.6",
+        "SPEC.md §12.5"
+      ],
       "reason": "Needs a mock that simulates a dropped connection / hang past the 10s timeout. batch-5 covers the non-200 no-requeue path automatically; the transient-failure path remains manual.",
       "fixtures": []
     },
     {
       "behavior": "10-level recursion-depth truncation on pathological nesting",
-      "spec": ["SPEC.md §9.3.2"],
+      "spec": [
+        "SPEC.md §9.3.2"
+      ],
       "reason": "Not exercised by fixtures (max nesting tested is 3 levels); language-dependent stack-limit behavior.",
       "fixtures": []
     },
     {
       "behavior": "0.0 (whole-valued float) -> 'float' in statically-typed SDKs (MUST); 'int' accepted for JS/TS (reference parser)",
-      "spec": ["SPEC.md §9.3.1", "SPEC.md §9.3.1.1"],
+      "spec": [
+        "SPEC.md §9.3.1",
+        "SPEC.md §9.3.1.1"
+      ],
       "reason": "Universal fixtures intentionally avoid 0.0 because the JS reference parser emits 'int'. Statically-typed SDKs verify 0.0->float via their own typed test inputs.",
       "fixtures": []
     },
     {
       "behavior": "Constructor validation throws on empty/whitespace apiKey or version; invalid env falls back to dev (no throw)",
-      "spec": ["SPEC.md §4.1", "SPEC.md §6.3"],
+      "spec": [
+        "SPEC.md §4.1",
+        "SPEC.md §6.3"
+      ],
       "reason": "No fixture constructs an invalid instance (all 30 use valid constructor blocks). Verify via the SDK's own unit tests; the harness surfaces a constructor throw as passed:false + exit code 1.",
       "fixtures": []
     },
     {
       "behavior": "prod instance ignores AVO_INSPECTOR_MOCK_ENDPOINT (fail-closed / default-deny)",
-      "spec": ["SPEC.md §7.1 security requirement"],
+      "spec": [
+        "SPEC.md §7.1 security requirement"
+      ],
       "reason": "No prod fixture exists (a prod instance would send to api.avo.app). Verify via the SDK's own unit tests; this is a security MUST.",
       "fixtures": []
     },
     {
       "behavior": "process-wide shouldLog flag shared across instances; apiKey/body redaction in logs",
-      "spec": ["SPEC.md §4.4", "SPEC.md §7.5.1"],
+      "spec": [
+        "SPEC.md §4.4",
+        "SPEC.md §7.5.1"
+      ],
       "reason": "Logging is observed on stderr, not asserted by the fixtures. Verify via the SDK's own unit tests.",
       "fixtures": []
     }

@@ -104,7 +104,10 @@ export class MockServer {
       this.reset();
       return this._json(res, 200, { ok: true });
     }
-    if (method === "POST") {
+    // AVO_INSPECTOR_MOCK_ENDPOINT is used as-is with no path appending
+    // (runner-contract), so a conformant SDK POSTs to "/". Any other POST path
+    // is a contract violation and MUST NOT be recorded as valid traffic.
+    if (method === "POST" && url === "/") {
       return this._handlePost(req, res);
     }
     return this._json(res, 404, { error: "not found" });
