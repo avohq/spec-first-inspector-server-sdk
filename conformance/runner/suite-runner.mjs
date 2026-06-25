@@ -46,6 +46,12 @@ const PLACEHOLDERS = {
 // ---------------------------------------------------------------------------
 // CLI args
 // ---------------------------------------------------------------------------
+/**
+ * Parse the runner CLI args, extracting the optional `--harness` command.
+ * Accepts both `--harness <cmd>` and `--harness=<cmd>` forms; exits 2 if empty.
+ * @param {string[]} argv - process.argv.slice(2) (args after `node suite-runner.mjs`).
+ * @returns {{ harness: string }} The resolved harness command (default: bundled example harness).
+ */
 function parseArgs(argv) {
   let harness = DEFAULT_HARNESS;
   for (let i = 0; i < argv.length; i += 1) {
@@ -66,6 +72,15 @@ function parseArgs(argv) {
 // ---------------------------------------------------------------------------
 // Harness invocation: write one JSON line to stdin, read one JSON line of stdout.
 // ---------------------------------------------------------------------------
+/**
+ * Spawn the harness subprocess for one fixture, write the input envelope as a
+ * single JSON line to stdin, and collect its stdout/stderr (runner-contract).
+ * @param {string} harnessCmd - The harness command to run (whitespace-tokenized).
+ * @param {Object} envelope - The fixture input envelope written to the harness stdin.
+ * @param {Object} extraEnv - Extra environment variables (e.g. AVO_INSPECTOR_MOCK_ENDPOINT).
+ * @returns {Promise<{ exitCode: number, stdout: string, stderr: string, spawnError?: string }>}
+ *   Resolves (never rejects) with the captured process result.
+ */
 function runHarness(harnessCmd, envelope, extraEnv) {
   return new Promise((resolve) => {
     // Split the harness command on whitespace (simple shell-free tokenization;
@@ -99,6 +114,13 @@ function runHarness(harnessCmd, envelope, extraEnv) {
 // Assertion helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Recursive structural deep-equality for the resolved `value` / `actual`
+ * assertions (extractSchema output, resolve values, etc.).
+ * @param {*} a - First value.
+ * @param {*} b - Second value.
+ * @returns {boolean} True when a and b are structurally equal.
+ */
 // Deep equality for the resolved `value` / `actual` assertions (extractSchema etc).
 function deepEqual(a, b) {
   if (a === b) return true;
@@ -120,6 +142,14 @@ function deepEqual(a, b) {
 // "expects" them.
 const FORBIDDEN_WIRE_FIELDS = new Set(["sessionId", "trackingId", "visitorId", "userId"]);
 
+/**
+ * Match one captured event body against an expected body, applying placeholder
+ * format-validation for placeholder-valued expected fields and rejecting any
+ * forbidden identifier field (SPEC §3.3, §7.3.1). Extra actual keys are tolerated.
+ * @param {*} expected - Expected event body (object with possible placeholder strings).
+ * @param {*} actual - Captured event body from the mock.
+ * @returns {boolean} True when actual satisfies every expected key.
+ */
 // Match one captured event body against an expected body, applying placeholder
 // format-validation for any placeholder-valued expected field.
 function matchBody(expected, actual) {
@@ -148,6 +178,14 @@ function matchBody(expected, actual) {
   return true;
 }
 
+/**
+ * Match expected batches against captured batches as an UNORDERED MULTISET: each
+ * expected batch must match exactly one distinct captured batch by contents;
+ * arrival order is NOT asserted (runner-contract).
+ * @param {Array[]} expectedBatches - Array of expected batches (each an array of events).
+ * @param {Array[]} capturedBatches - Array of captured batches from the mock.
+ * @returns {{ ok: boolean, reason?: string }} ok:true on full match, else a failure reason.
+ */
 // Match a set of expected batches against captured batches as an UNORDERED
 // MULTISET: each expected batch must match exactly one distinct captured batch by
 // contents; arrival order is NOT asserted (runner-contract).
@@ -174,6 +212,14 @@ function matchBatchesUnordered(expectedBatches, capturedBatches) {
   return { ok: true };
 }
 
+/**
+ * Compare one expected batch to one captured batch. Matches when both are arrays
+ * of equal length and each expected event matches a distinct captured event
+ * (events within a batch are an unordered multiset too).
+ * @param {Array} expBatch - Expected batch (array of expected events).
+ * @param {Array} capBatch - Captured batch (array of captured events).
+ * @returns {boolean} True when the batches match as multisets.
+ */
 // A batch matches when it is an array of the same length and each expected event
 // matches exactly one distinct captured event (events within a batch are matched
 // as an unordered multiset too — events in a batch are self-contained).
@@ -196,6 +242,12 @@ function batchEquals(expBatch, capBatch) {
   return true;
 }
 
+/**
+ * Extract the batch arrays from captured POST requests. Each POST body must be a
+ * JSON array (one batch); a malformed or non-array body is an error.
+ * @param {Array<{ body: * }>} requests - Captured requests from the mock.
+ * @returns {{ batches: Array[] } | { error: string }} The list of batches, or an error.
+ */
 // Captured request bodies: each POST body is a JSON array (one batch). Returns the
 // list of batches, or an error if any body is malformed (gunzip/parse failure).
 function extractBatches(requests) {
@@ -213,6 +265,13 @@ function extractBatches(requests) {
   return { batches };
 }
 
+/**
+ * Assert expected request headers across every captured request. A null expected
+ * value asserts the header is absent; otherwise it must equal exactly (case-insensitive name).
+ * @param {Object<string, string|null>} expectedHeaders - Header name -> expected value (or null for absent).
+ * @param {Array<{ headers?: Object }>} requests - Captured requests from the mock.
+ * @returns {{ ok: boolean, reason?: string }} ok:true when all headers match, else a failure reason.
+ */
 function assertHeaders(expectedHeaders, requests) {
   for (const req of requests) {
     for (const name of Object.keys(expectedHeaders)) {
@@ -232,6 +291,16 @@ function assertHeaders(expectedHeaders, requests) {
 // ---------------------------------------------------------------------------
 // Per-fixture execution + assertion
 // ---------------------------------------------------------------------------
+/**
+ * Run a single fixture end-to-end: build the input envelope, configure the mock,
+ * drive the harness, and perform every runner-side assertion (the harness asserts
+ * nothing). Covers schema-extraction, wire-protocol, error-handling, and batching.
+ * @param {string} suite - Suite name (also injected into the envelope as `suite`).
+ * @param {Object} fixture - The fixture object (includes assertion + mock fields).
+ * @param {string} harnessCmd - The harness command to spawn.
+ * @param {MockServer} mock - The shared in-process mock server.
+ * @returns {Promise<{ fixtureId: string, failures: string[] }>} The fixture id and any failures.
+ */
 async function runFixture(suite, fixture, harnessCmd, mock) {
   const fixtureId = fixture.fixture_id;
   const failures = [];
@@ -413,6 +482,12 @@ async function runFixture(suite, fixture, harnessCmd, mock) {
 // ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
+/**
+ * Entry point: parse args, start the mock, run every fixture across all four
+ * suites in order, print per-fixture PASS/FAIL lines and a summary, and exit
+ * non-zero if any fixture fails (0 when all pass).
+ * @returns {Promise<void>} Resolves after the process exit code is set.
+ */
 async function main() {
   const { harness } = parseArgs(process.argv.slice(2));
 
@@ -468,6 +543,12 @@ async function main() {
   process.exit(0);
 }
 
+/**
+ * Truncate a string to at most n characters, appending an ellipsis when cut.
+ * @param {string} s - The string to truncate.
+ * @param {number} n - Maximum length before truncation.
+ * @returns {string} The original string, or a truncated form ending in an ellipsis.
+ */
 function truncate(s, n) {
   return s.length > n ? s.slice(0, n - 1) + "…" : s;
 }

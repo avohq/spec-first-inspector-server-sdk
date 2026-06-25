@@ -19,6 +19,10 @@ import { AvoInspector } from "./sdk.mjs";
 
 const HARNESS_CONTRACT_VERSION = "1.0.0";
 
+/**
+ * Read the entire stdin stream to a UTF-8 string (the single input envelope line).
+ * @returns {Promise<string>} Resolves with the full stdin contents.
+ */
 function readStdin() {
   return new Promise((resolve, reject) => {
     const chunks = [];
@@ -28,10 +32,22 @@ function readStdin() {
   });
 }
 
+/**
+ * Write a single output envelope as one JSON line to stdout (runner-contract).
+ * @param {Object} env - The output envelope to serialize.
+ * @returns {void}
+ */
 function writeEnvelope(env) {
   process.stdout.write(JSON.stringify(env) + "\n");
 }
 
+/**
+ * Emit a passed:false envelope and exit with code 2 (harness configuration error:
+ * malformed envelope, missing field, unsupported operation, or unapplicable precondition).
+ * @param {string|null} fixtureId - The fixture id (or null if unknown).
+ * @param {string} message - The error message.
+ * @returns {never} Exits the process with code 2.
+ */
 // Exit code 2 — harness configuration error (malformed envelope, missing field,
 // unsupported operation, or precondition could not be applied).
 function configError(fixtureId, message) {
@@ -45,6 +61,14 @@ function configError(fixtureId, message) {
   process.exit(2);
 }
 
+/**
+ * Apply fixture preconditions to the inspector (runner-contract). Currently only
+ * `samplingRate` is supported via the test-only hook; any other field is a config error.
+ * @param {AvoInspector} inspector - The inspector instance to configure.
+ * @param {Object} precondition - The precondition map from the fixture (may be falsy).
+ * @param {string} fixtureId - The fixture id (used in error envelopes).
+ * @returns {void}
+ */
 function applyPrecondition(inspector, precondition, fixtureId) {
   if (!precondition || typeof precondition !== "object") return;
   for (const key of Object.keys(precondition)) {
@@ -59,6 +83,15 @@ function applyPrecondition(inspector, precondition, fixtureId) {
   }
 }
 
+/**
+ * Invoke trackSchemaFromEvent with contract-correct arity: omit the third argument
+ * entirely when no streamId is given, so SDKs inspecting arguments.length see the right shape.
+ * @param {AvoInspector} inspector - The inspector instance.
+ * @param {string} eventName - The event name.
+ * @param {*} eventProperties - The event properties.
+ * @param {string} [streamId] - Optional stream id; omitted from the call when undefined.
+ * @returns {Promise<Array>} The trackSchemaFromEvent result.
+ */
 // Call trackSchemaFromEvent with the contract-correct arity: omit the third
 // argument entirely when no streamId is provided, so SDKs that inspect
 // arguments.length observe the right invocation shape.
@@ -68,6 +101,14 @@ function callTrack(inspector, eventName, eventProperties, streamId) {
     : inspector.trackSchemaFromEvent(eventName, eventProperties, streamId);
 }
 
+/**
+ * Execute a multi-step sequence operation (track / trackN / flush / destroy),
+ * collecting a per-step result record (runner-contract sequence mode).
+ * @param {AvoInspector} inspector - The inspector instance.
+ * @param {Array<Object>} steps - The ordered sequence steps.
+ * @param {string} fixtureId - The fixture id (used in error envelopes).
+ * @returns {Promise<Array<{ action: string, outcome: string, value: * }>>} Per-step result records.
+ */
 async function runSequence(inspector, steps, fixtureId) {
   if (!Array.isArray(steps)) configError(fixtureId, "sequence operation requires a steps array");
   const actual = [];
@@ -105,6 +146,13 @@ async function runSequence(inspector, steps, fixtureId) {
   return actual;
 }
 
+/**
+ * Harness entry point (runner-contract): read and parse the input envelope,
+ * construct the AvoInspector, apply preconditions, dispatch the requested
+ * operation (extractSchema / trackSchemaFromEvent / sequence), and write exactly
+ * one output envelope. Exit 0 on success, 1 on harness-level failure, 2 on config error.
+ * @returns {Promise<void>} Resolves before the process exits.
+ */
 async function main() {
   let raw;
   try {

@@ -35,6 +35,12 @@ let _shouldLog = false;
 // the safe wrapper lives in AvoInspector.extractSchema (§4.3).
 // ---------------------------------------------------------------------------
 
+/**
+ * Classify a scalar value into its basic Inspector property type (SPEC §9.3.1).
+ * Whole-valued numbers classify as "int", non-whole as "float"; null/undefined => "null".
+ * @param {*} val - The scalar value to classify.
+ * @returns {string} One of "null" | "string" | "int" | "float" | "boolean" | "object" | "unknown".
+ */
 function getBasicPropType(val) {
   if (val === null || val === undefined) return "null";
   const t = typeof val;
@@ -49,6 +55,12 @@ function getBasicPropType(val) {
   return "unknown";
 }
 
+/**
+ * Resolve the property-value type, returning a `list(<elemType>)` wrapper for
+ * arrays (element type from the first item; empty/null-first => "list(string)").
+ * @param {*} val - The property value.
+ * @returns {string} The basic type, or a `list(...)` type string for arrays.
+ */
 function getPropValueType(val) {
   if (Array.isArray(val)) {
     const first = val[0];
@@ -58,6 +70,12 @@ function getPropValueType(val) {
   return getBasicPropType(val);
 }
 
+/**
+ * Deduplicate mapping() output by deep structural equality, preserving first-seen
+ * order (SPEC §9.3.3).
+ * @param {Array} arr - The mapped entries (objects or type strings).
+ * @returns {Array} A new array with structural duplicates removed.
+ */
 // Deduplicate mapping() output: primitives by value, arrays/objects by deep
 // structural equality (§9.3.3 — observably identical to reference-identity for
 // the conformance fixtures, whose elements are distinct by construction).
@@ -70,6 +88,12 @@ function removeDuplicates(arr) {
   return out;
 }
 
+/**
+ * Recursive structural deep-equality used by removeDuplicates (SPEC §9.3.3).
+ * @param {*} a - First value.
+ * @param {*} b - Second value.
+ * @returns {boolean} True when a and b are structurally equal.
+ */
 function deepEqual(a, b) {
   if (a === b) return true;
   if (Array.isArray(a) && Array.isArray(b)) {
@@ -85,6 +109,13 @@ function deepEqual(a, b) {
   return false;
 }
 
+/**
+ * Recursively map a value to the Inspector schema shape (SPEC §9.3): objects map
+ * to `{ propertyName, propertyType, children? }` entries; arrays map to a deduped
+ * list of mapped elements; scalars map to their value-type string.
+ * @param {*} object - The value (object, array, or scalar) to map.
+ * @returns {Array|string} An array of schema entries, or a type string for scalars.
+ */
 function mapping(object) {
   if (Array.isArray(object)) {
     return removeDuplicates(object.map((x) => mapping(x)));
@@ -106,6 +137,13 @@ function mapping(object) {
   return getPropValueType(object);
 }
 
+/**
+ * Top-level schema parser (AvoSchemaParser, SPEC §9): null/undefined input yields
+ * an empty schema; otherwise delegates to mapping(). Has no try/catch — the safe
+ * wrapper is AvoInspector.extractSchema (§4.3).
+ * @param {*} eventProperties - The raw event properties to parse.
+ * @returns {Array} The extracted schema (array of property entries).
+ */
 function parseSchema(eventProperties) {
   if (eventProperties === null || eventProperties === undefined) return [];
   return mapping(eventProperties);
@@ -115,11 +153,35 @@ function parseSchema(eventProperties) {
 // AvoInspector (§4)
 // ---------------------------------------------------------------------------
 
+/**
+ * Reference Avo Inspector server SDK (non-normative). Implements the public API
+ * (SPEC §4), wire protocol (§7), UUID/timestamp generation (§8), schema extraction
+ * (§9), and batching/flush/destroy (§12).
+ */
 export class AvoInspector {
+  /**
+   * The harness contract version this SDK targets (runner-contract).
+   * @returns {string} SemVer of the implemented harness contract.
+   */
   static get HARNESS_CONTRACT_VERSION() {
     return HARNESS_CONTRACT_VERSION;
   }
 
+  /**
+   * Construct and validate an inspector instance (SPEC §4.1). Throws synchronously
+   * on a missing/empty apiKey or version; falls back to "dev" for an invalid env
+   * (§6.3); clamps batching config to defaults; and starts the best-effort flush
+   * timer when batching is enabled (§12.3).
+   * @param {Object} [options] - Construction options.
+   * @param {string} options.apiKey - Required non-empty API key.
+   * @param {string} [options.env] - One of "dev" | "staging" | "prod" (invalid => "dev").
+   * @param {string} options.version - Required non-empty app version string.
+   * @param {string} [options.appName] - Optional app name (non-string => "").
+   * @param {number} [options.batchSize] - Batch size >= 1 (default 30; forced to 1 in dev).
+   * @param {number} [options.batchFlushSeconds] - Flush interval > 0 (default 30).
+   * @param {number} [options.maxQueueSize] - Max pending events >= 1 (default 1000).
+   * @param {boolean} [options.disableBatchTimer] - When true, suppress the scheduled flush timer.
+   */
   constructor(options = {}) {
     const { apiKey, env, version, appName, batchSize, batchFlushSeconds, maxQueueSize, disableBatchTimer } =
       options || {};
@@ -192,11 +254,21 @@ export class AvoInspector {
     }
   }
 
+  /**
+   * Toggle the process-wide logging flag (SPEC §4.4).
+   * @param {boolean} enable - True to enable diagnostic logging.
+   * @returns {void}
+   */
   // §4.4
   enableLogging(enable) {
     _shouldLog = enable === true;
   }
 
+  /**
+   * Safe wrapper around the schema parser (SPEC §4.3); never throws, returns [] on error.
+   * @param {*} eventProperties - The event properties to extract a schema from.
+   * @returns {Array} The extracted schema, or [] if parsing threw.
+   */
   // §4.3 — safe wrapper around the parser; never throws, returns [] on error.
   extractSchema(eventProperties) {
     try {
@@ -211,10 +283,27 @@ export class AvoInspector {
   // documented public API — prefixed `_` and named `*ForTesting` so it is not a
   // public `setSamplingRate` (which would let callers disable telemetry, §precondition
   // security requirement).
+  /**
+   * Test-only hook to set the sampling rate (runner-contract precondition).
+   * Intentionally not part of the public API. See note above.
+   * @param {number} rate - Sampling rate in [0, 1].
+   * @returns {void}
+   */
   _setSamplingRateForTesting(rate) {
     this.samplingRate = rate;
   }
 
+  /**
+   * Extract the event schema and enqueue a wire body for sending (SPEC §4.2).
+   * Returns [] immediately after destroy() (§4.5); applies per-event sampling at
+   * enqueue (§7.7); when batchSize == 1 the send is awaited so the HTTP outcome is
+   * observable (§4.2.4/§7.5); otherwise resolves at enqueue. Rejects on a
+   * synchronous internal error (§4.2.5).
+   * @param {string} eventName - The tracked event name.
+   * @param {*} eventProperties - The event properties to extract a schema from.
+   * @param {string} [streamId] - Optional stream identifier (§4.2/§8.2).
+   * @returns {Promise<Array>} Resolves with the extracted schema (or [] on a non-200 immediate send).
+   */
   // §4.2
   async trackSchemaFromEvent(eventName, eventProperties, streamId) {
     // §4.5 — after destroy(), resolve([]) without enqueue or HTTP.
@@ -276,6 +365,12 @@ export class AvoInspector {
     }
   }
 
+  /**
+   * Append a wire body to the pending batch, enforcing the maxQueueSize FIFO cap
+   * (oldest-dropped on overflow, §12.5), then fire the size trigger (§12.3).
+   * @param {Object} body - The self-contained wire body to enqueue.
+   * @returns {Promise<{ status: string }>|null} The dispatched send promise, or null if no send fired.
+   */
   // §12.4/§12.5 enqueue with maxQueueSize FIFO cap, then evaluate size trigger.
   _enqueue(body) {
     this._pendingBatch.push(body);
@@ -297,6 +392,11 @@ export class AvoInspector {
     return null;
   }
 
+  /**
+   * Atomically swap out and clear the pending batch, then send it outside the
+   * "lock" and track the in-flight promise (SPEC §3.1/§12.4).
+   * @returns {Promise<{ status: string }>|null} The tracked send promise, or null if the batch was empty.
+   */
   // §3.1/§12.4 atomic swap-and-clear, then send OUTSIDE the lock. In Node the
   // synchronous swap below is the "lock"; the async send runs after. Returns the
   // tracked send promise (resolving to an outcome object), or null if empty.
@@ -311,6 +411,13 @@ export class AvoInspector {
     return sendPromise;
   }
 
+  /**
+   * POST a batch to the resolved endpoint (SPEC §7): serialize, gzip when >= 1024
+   * bytes (§7.3.5), apply a 10s timeout (§7.6), update samplingRate on 200 (§7.4),
+   * and swallow non-200/network/timeout errors without re-queueing (§7.5.2, at-most-once).
+   * @param {Object[]} batch - The events to send as a single JSON array body.
+   * @returns {Promise<{ status: "ok" | "non200" | "error" }>} The send outcome; never throws.
+   */
   // §7 HTTP send. Resolves on completion with an outcome object
   // ({ status: "ok" | "non200" | "error" }); never throws (network errors /
   // non-200 swallowed). At-most-once: failures are NOT re-queued (§7.5.2, §12.5).
@@ -369,6 +476,11 @@ export class AvoInspector {
     }
   }
 
+  /**
+   * Resolve the send endpoint (SPEC §7.1) with a fail-closed mock gate: a `prod`
+   * instance NEVER honors AVO_INSPECTOR_MOCK_ENDPOINT; non-prod uses it verbatim.
+   * @returns {string} The mock endpoint (non-prod, when set) or the production endpoint.
+   */
   // §7.1 endpoint resolution with fail-closed (default-deny) mock gate: a `prod`
   // instance NEVER honors AVO_INSPECTOR_MOCK_ENDPOINT regardless of environment.
   _resolveEndpoint() {
@@ -379,6 +491,13 @@ export class AvoInspector {
     return PROD_ENDPOINT;
   }
 
+  /**
+   * Force-flush the pending batch and await all in-flight sends, bounded by a
+   * timeout (SPEC §4.6/§12.6). Always resolves (completion, not delivery, guarantee);
+   * a no-op after destroy().
+   * @param {number} [timeoutMs] - Max time to wait for in-flight sends (default 10000).
+   * @returns {Promise<void>} Resolves when sends settle or the timeout elapses.
+   */
   // §4.6/§12.6 — force-flush the pending batch, then await all in-flight sends.
   async flush(timeoutMs = DEFAULT_FLUSH_TIMEOUT_MS) {
     if (this._destroyed) return;
@@ -396,6 +515,12 @@ export class AvoInspector {
     clearTimeout(timer);
   }
 
+  /**
+   * Tear down the instance (SPEC §4.5/§12.6): mark destroyed, discard the pending
+   * batch unsent, abandon in-flight sends, and clear the flush timer. Config
+   * (samplingRate, apiKey, env, version, appName) and process-wide logging persist.
+   * @returns {void}
+   */
   // §4.5/§12.6 — cancel and clean up; discard pending batch unsent.
   destroy() {
     this._destroyed = true;
