@@ -61,6 +61,7 @@
     },
     "sessionId": {
       "type": "string",
+      "const": "",
       "description": "Always empty string for server SDKs. Required by the Inspector ingestion pipeline."
     },
     "createdAt": {
@@ -91,10 +92,12 @@
       "description": "Extracted schema — array of plain property objects."
     }
   },
-  "$comment": "Unknown extra fields are permitted — the Inspector backend ignores fields it does not read (write-api consumes only named keys). sessionId is REQUIRED and MUST be the empty string for server SDKs (the ingestion pipeline drops events that omit it). Only trackingId is forbidden (SPEC.md §3.3, §7.3.1). This matches openapi.yaml EventBody.",
+  "$comment": "Unknown extra fields are permitted — the Inspector backend ignores fields it does not read (write-api consumes only named keys). sessionId is REQUIRED and MUST be the empty string for server SDKs (the ingestion pipeline drops events that omit it). trackingId, visitorId, and userId are forbidden (SPEC.md §3.3, §7.3.1). This matches openapi.yaml EventBody.",
   "not": {
     "anyOf": [
-      { "required": ["trackingId"] }
+      { "required": ["trackingId"] },
+      { "required": ["visitorId"] },
+      { "required": ["userId"] }
     ]
   }
 }

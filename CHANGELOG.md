@@ -47,7 +47,7 @@ SDK generated from v1.0.0 omits `sessionId` and therefore fails to deliver event
 | `SPEC.md` §7.3 / §7.3.1 | Base body example and Base Body Fields table add `sessionId`; "omitted fields" note now forbids only `trackingId`. |
 | `SPEC.md` §8.2 | `sessionId` MUST be sent as `""`; `trackingId`/`visitorId`/`userId` MUST NOT be sent. |
 | `AGENTS.md` | `sessionId` moved from the Forbidden to the Required wire-field lists (checklist + AC-9). |
-| `schemas/event-body.json`, `openapi.yaml` | `sessionId` added to `required` and `properties`; removed from the forbidden `not.anyOf` (only `trackingId` forbidden). |
+| `schemas/event-body.json`, `openapi.yaml` | `sessionId` added to `required` and `properties` and constrained to `const: ""`; the forbidden `not.anyOf` covers `trackingId`, `visitorId`, and `userId`. |
 | `conformance/runner/suite-runner.mjs` | `sessionId` removed from `FORBIDDEN_WIRE_FIELDS`. |
 | `conformance/**/fixtures.json` | Every expected event object now includes `"sessionId": ""`. |
 
