@@ -48,7 +48,7 @@ raw body bytes before parsing the JSON, so the captured `body` is always the dec
 **Example:**
 
 ```sh
-AVO_INSPECTOR_MOCK_ENDPOINT=http://localhost:9876 echo '<fixture-json>' | avo-inspector-conformance
+echo '<fixture-json>' | AVO_INSPECTOR_MOCK_ENDPOINT=http://localhost:9876 avo-inspector-conformance
 ```
 
 ## Format Validation

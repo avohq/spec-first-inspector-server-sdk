@@ -361,7 +361,7 @@ runtime (not compile time). The check MUST occur before every HTTP call. If the 
 set, the full URL from the variable MUST be used as-is (no path appending). Example:
 
 ```sh
-AVO_INSPECTOR_MOCK_ENDPOINT=http://localhost:9876 echo '<fixture-json>' | avo-inspector-conformance
+echo '<fixture-json>' | AVO_INSPECTOR_MOCK_ENDPOINT=http://localhost:9876 avo-inspector-conformance
 ```
 
 In this example, the SDK MUST POST to `http://localhost:9876` instead of

@@ -26,9 +26,10 @@ conformance/
 
 ### schema-extraction
 
-Tests the `extractSchema` / `AvoSchemaParser.extractSchema` function in isolation. These fixtures
-are pure input/output: given `input` (an event properties object), the SDK must produce `expected`
-(an array of `SchemaEntry` objects). No network calls, no constructor options required.
+Tests the `extractSchema` / `AvoSchemaParser.extractSchema` function. Each fixture carries a
+minimal `constructor` block; the harness constructs an `AvoInspector` from it, then calls
+`inspector.extractSchema(input)` — `input` (an event properties object) IS the argument, and the
+SDK must produce `expected` (an array of `SchemaEntry` objects). No network calls.
 
 See `schema-extraction/README.md` for details and `schema-extraction/fixtures.json` for the
 machine-readable fixtures.

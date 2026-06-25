@@ -207,7 +207,7 @@ set before invoking the harness. The suite runner starts a local mock HTTP serve
 its URL:
 
 ```sh
-AVO_INSPECTOR_MOCK_ENDPOINT=http://localhost:9876 echo '<fixture-json>' | avo-inspector-conformance
+echo '<fixture-json>' | AVO_INSPECTOR_MOCK_ENDPOINT=http://localhost:9876 avo-inspector-conformance
 ```
 
 The SDK MUST POST to `http://localhost:9876` (no trailing slash, no path appended) when this
