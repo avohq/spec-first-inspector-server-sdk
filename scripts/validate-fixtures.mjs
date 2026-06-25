@@ -39,12 +39,29 @@ const fail = (suite, fixtureId, where, validator) => {
   );
 };
 
-// schema-extraction: every element of expected[] is a SchemaEntry.
+// Guard against a malformed fixture silently passing with zero checks: when a
+// fixture array is required (or present but the wrong type), fail fast instead
+// of defaulting to []. Returns the array, or null on failure.
+const requireArray = (suite, fixtureId, value, key) => {
+  if (!Array.isArray(value)) {
+    failures += 1;
+    console.error(
+      `[FAIL] ${suite} / ${fixtureId} — ${key}: expected an array, got ${value === undefined ? "missing key" : typeof value}`,
+    );
+    return null;
+  }
+  return value;
+};
+
+// schema-extraction: every fixture MUST carry an expected[] (the asserted
+// output); each element is a SchemaEntry.
 const schemaExtraction = JSON.parse(
   readFileSync(join(root, "conformance/schema-extraction/fixtures.json"), "utf8"),
 );
 for (const f of schemaExtraction) {
-  (f.expected ?? []).forEach((entry, i) => {
+  const expected = requireArray("schema-extraction", f.fixture_id, f.expected, "expected");
+  if (!expected) continue;
+  expected.forEach((entry, i) => {
     if (!validateEntry(entry)) fail("schema-extraction", f.fixture_id, `expected[${i}]`, validateEntry);
   });
 }
@@ -60,7 +77,13 @@ for (const rel of [
   const suite = rel.split("/")[1];
   const fixtures = JSON.parse(readFileSync(join(root, rel), "utf8"));
   for (const f of fixtures) {
-    (f.expected_request_body ?? []).forEach((body, b) => {
+    // expected_request_body is legitimately absent when no request is expected
+    // (e.g. wire-8, error-2). When present it MUST be an array — a present-but-
+    // malformed value (null/object) is a fixture error, not a "skip".
+    if (!("expected_request_body" in f)) continue;
+    const expectedBody = requireArray(suite, f.fixture_id, f.expected_request_body, "expected_request_body");
+    if (!expectedBody) continue;
+    expectedBody.forEach((body, b) => {
       (body.eventProperties ?? []).forEach((prop, i) => {
         if (!validateProp(prop)) {
           fail(suite, f.fixture_id, `expected_request_body[${b}].eventProperties[${i}]`, validateProp);
@@ -76,7 +99,13 @@ const batching = JSON.parse(
   readFileSync(join(root, "conformance/batching/fixtures.json"), "utf8"),
 );
 for (const f of batching) {
-  (f.expected_request_bodies ?? []).forEach((batch, b) => {
+  // expected_request_bodies is absent for fixtures that send nothing (batch-3)
+  // or assert via a different mechanism (batch-6). When present it MUST be an
+  // array of batches.
+  if (!("expected_request_bodies" in f)) continue;
+  const expectedBatches = requireArray("batching", f.fixture_id, f.expected_request_bodies, "expected_request_bodies");
+  if (!expectedBatches) continue;
+  expectedBatches.forEach((batch, b) => {
     (batch ?? []).forEach((body, e) => {
       (body.eventProperties ?? []).forEach((prop, i) => {
         if (!validateProp(prop)) {

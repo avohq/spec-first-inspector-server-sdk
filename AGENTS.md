@@ -100,14 +100,15 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   `messageId`, `samplingRate`, `streamId`, `type`.
 
   **Forbidden fields (MUST NOT appear in any wire body):**
-  `sessionId`, `trackingId`.
+  `sessionId`, `trackingId`, `visitorId`, `userId`.
 - [ ] `libVersion` MUST be a plain SemVer string (e.g., `"1.2.0"`). No suffix (`+spec`, `-rc1`,
   etc.) is permitted. Define it as a constant in a dedicated version file (SPEC.md §7.3.3).
 - [ ] `messageId` MUST be a UUID v4, lowercase hex, hyphenated, unique per event object.
   Pattern: `^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`
   (SPEC.md §8.1).
-- [ ] `createdAt` MUST be an ISO 8601 UTC timestamp with millisecond precision
-  (e.g., `"2026-05-25T12:00:00.000Z"`). The `.000Z` suffix MUST be present (SPEC.md §7.3.1).
+- [ ] `createdAt` MUST be an ISO 8601 UTC timestamp with millisecond precision: a 3-digit
+  millisecond suffix (e.g., `"2026-05-25T12:00:00.000Z"`) MUST be present, though the digit
+  values themselves are not constrained (SPEC.md §7.3.1).
 - [ ] Request bodies ≥ 1024 bytes (UTF-8) MUST be gzip-compressed (RFC 1952) whenever a gzip
   implementation is available, with `Content-Encoding: gzip` and `Content-Length` set to the
   compressed length; `Content-Type` stays `application/json`. Fall back to an uncompressed body
@@ -275,7 +276,7 @@ Every outgoing event object contains all required fields:
 `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
 `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
 `messageId`, `samplingRate`, `streamId`, `type`.
-`sessionId` and `trackingId` MUST NOT be sent.
+`sessionId`, `trackingId`, `visitorId`, and `userId` MUST NOT be sent.
 
 ### AC-10 — libVersion plain SemVer, no suffix (SPEC.md §7.3.3)
 

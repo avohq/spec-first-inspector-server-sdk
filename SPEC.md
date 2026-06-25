@@ -24,7 +24,6 @@
 10. [Schema Extraction Golden Fixtures](#10-schema-extraction-golden-fixtures)
 11. [Flush and Shutdown](#11-flush-and-shutdown)
 12. [Batching](#12-batching)
-13. [Out of Scope](#13-out-of-scope)
 
 ---
 
@@ -59,7 +58,7 @@ implement the normative requirements in this document.
 ## 3. Server-Side Requirements
 
 All conformant SDK implementations MUST satisfy the following requirements. These are
-server-side-only requirements; browser/client-side concerns are out of scope.
+server-side-only requirements; browser/client-side concerns do not apply.
 
 ### 3.1 Thread and Async Safety
 
@@ -450,7 +449,7 @@ These fields MUST be present on every event object:
 | `libPlatform` | string | Identifies the SDK platform/language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). MUST be a non-empty string. |
 | `messageId` | string | UUID v4 (random). MUST be unique per event. See Section 8. |
 | `streamId` | string | The caller-supplied stream id, or `""` if none provided. |
-| `createdAt` | string | ISO 8601 UTC timestamp at event send time (e.g., `"2026-05-25T12:00:00.000Z"`). Millisecond precision MUST be included (`.000Z` suffix). |
+| `createdAt` | string | ISO 8601 UTC timestamp at event send time (e.g., `"2026-05-25T12:00:00.000Z"`). A 3-digit millisecond suffix (e.g., `.000Z`) MUST be present; the value of those digits is not constrained. |
 | `samplingRate` | number | Current sampling rate `[0.0, 1.0]`. Initial value `1.0`. Updated from server response. |
 
 > **Note on omitted fields:** `trackingId` and `sessionId` MUST NOT be sent in v1. They are
@@ -1294,27 +1293,6 @@ MAY mix `streamId`/`eventName`/`createdAt` across elements. `Content-Type` remai
 - `trackSchemaFromEvent` resolves with the extracted schema at enqueue time (Section 4.2); the
   batch's eventual HTTP outcome is not observable per call when `batchSize > 1` (Section 7.5.2).
 - Sampling is evaluated per event at enqueue (Section 7.7); dropped events are never buffered.
-
----
-
-## 13. Out of Scope
-
-The following are explicitly out of scope for spec v1. Implementations MUST NOT include them;
-AI agents generating SDKs MUST NOT add them.
-
-- **Browser/client-side SDK concerns.** `localStorage`, page events, `visitorId`, `userId`,
-  session management — none of these apply to server-side SDKs.
-- **Hosting, publishing, or packaging generated SDKs.** Publishing to RubyGems, PyPI,
-  Crates.io, npm, Maven Central, etc. is the customer's responsibility.
-- **Persistent / durable queuing.** Writing the pending batch to disk or any persistent store, and
-  cross-process or cross-restart batch durability, are out of scope. The batch buffer is in-memory
-  only (Sections 3.2 and 12); buffered-but-unsent events are lost on process exit without `flush()`.
-- **Telemetry or usage reporting** from generated SDKs.
-- **Property-value encryption.** ECIES, `publicEncryptionKey`, and any encryption of event
-  property values are out of scope for v1. SDKs MUST NOT implement property-value encryption and
-  MUST NOT accept a `publicEncryptionKey` constructor option. A future `[WIRE]`-tagged release MAY
-  introduce encryption.
-- **sessionId / visitorId / userId.** Server SDKs MUST NOT include these fields.
 
 ---
 
