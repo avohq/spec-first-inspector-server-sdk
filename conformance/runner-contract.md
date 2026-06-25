@@ -56,13 +56,13 @@ The harness MUST:
 
 1. Read exactly one line of JSON from stdin.
 2. Parse the input envelope (see [Input envelope](#input-envelope)).
-3. If `suite` is `"schema-extraction"`: treat the entire `input` field as the `eventProperties`
-   argument to `extractSchema()` and proceed to step 5.
-   Otherwise: construct an `AvoInspector` instance using the `constructor` options from the
-   envelope.
+3. Construct an `AvoInspector` instance using the `constructor` options from the envelope. (The
+   `schema-extraction` fixtures carry a minimal `constructor` block for this purpose; `extractSchema`
+   is an instance method per SPEC §4.3, so an instance is always required.)
 4. Apply any `precondition` state (see [`precondition` field](#precondition)).
-5. Invoke the operation named in the `operation` field (or `extractSchema()` for the
-   `schema-extraction` suite) with the appropriate input.
+5. Invoke the operation named in the `operation` field (for the `schema-extraction` suite, call
+   `inspector.extractSchema(input)`, where the entire `input` field is the `eventProperties`
+   argument).
 6. Capture the result (resolved value or rejection reason).
 7. Write exactly one line of JSON to stdout (the output envelope — see [Output envelope](#output-envelope)).
 8. Exit with the appropriate exit code (see [Exit codes](#exit-codes)).
@@ -86,8 +86,8 @@ The input envelope is a JSON object with the following fields.
 |---|---|---|---|
 | `suite` | string | YES — injected by runner | Suite identifier: `"schema-extraction"`, `"wire-protocol"`, `"error-handling"`, or `"batching"`. NOT present in fixture files; the suite runner MUST inject this field from the parent directory name before passing the envelope to the harness. |
 | `fixture_id` | string | YES | Unique identifier for this fixture (e.g., `"wire-1"`, `"fixture-3"`, `"batch-1"`). MUST be echoed in the output envelope. |
-| `constructor` | object | YES — except `schema-extraction` | Options passed verbatim to the `AvoInspector` constructor. Absent for `schema-extraction` fixtures; the harness MUST NOT require it when `suite` is `"schema-extraction"`. |
-| `operation` | string | YES — except `schema-extraction` | SDK method to invoke: `"extractSchema"`, `"trackSchemaFromEvent"`, or `"sequence"` (batching suite — see below). Absent for `schema-extraction` fixtures; the harness MUST call `extractSchema()` directly when `suite` is `"schema-extraction"`. |
+| `constructor` | object | YES | Options passed verbatim to the `AvoInspector` constructor. The `schema-extraction` fixtures carry a minimal block (`apiKey`/`env`/`version`) so the harness can construct an instance before calling `extractSchema`. |
+| `operation` | string | YES — except `schema-extraction` | SDK method to invoke: `"extractSchema"`, `"trackSchemaFromEvent"`, or `"sequence"` (batching suite — see below). Absent for `schema-extraction` fixtures; the harness MUST call `inspector.extractSchema()` on the constructed instance when `suite` is `"schema-extraction"`. |
 | `input` | object | YES — except `sequence` | Operation-specific input payload. For `schema-extraction`, the entire `input` object IS the `eventProperties` argument. For other suites, shape depends on `operation` (see below). Replaced by `steps` when `operation` is `"sequence"`. |
 | `steps` | array | YES — for `sequence` | Ordered list of actions run against a single instance in the `batching` suite. See [Multi-event sequence mode](#multi-event-sequence-mode-operation-sequence). |
 | `precondition` | object | NO | State to apply to the SDK instance before invoking the operation. See [`precondition`](#precondition). |
@@ -109,9 +109,10 @@ The input envelope is a JSON object with the following fields.
 
 ### `operation` values and `input` shapes
 
-**`"extractSchema"`** — for the `schema-extraction` suite the harness calls
-`inspector.extractSchema(input)`, where the entire `input` field IS the `eventProperties`
-argument (no wrapper object). Consistent with steps 3 and the `input` row above:
+**`"extractSchema"`** — for the `schema-extraction` suite the harness constructs an `AvoInspector`
+instance from the fixture's `constructor` block, then calls `inspector.extractSchema(input)`, where
+the entire `input` field IS the `eventProperties` argument (no wrapper object). Consistent with
+step 3 and the `input` row above:
 
 ```json
 {
@@ -187,7 +188,7 @@ Each element of `steps` is one action, executed in order on the same instance:
 | Field | Assertion |
 |---|---|
 | `expected_request_count` | The number of HTTP POSTs captured MUST equal this value. |
-| `expected_request_bodies` | An ordered array of expected batch bodies; each element is itself an array of event objects (one batch = one HTTP call). Each event is format-validated for placeholder fields (`<uuid-v4>`, `<iso8601>`, `<semver>`, `<sdk-platform>`) exactly as in the wire-protocol suite. Batches MUST match in order. |
+| `expected_request_bodies` | An array of expected batch bodies; each element is itself an array of event objects (one batch = one HTTP call). Each event is format-validated for placeholder fields (`<uuid-v4>`, `<iso8601>`, `<semver>`, `<sdk-platform>`) exactly as in the wire-protocol suite. Batches are matched as an **unordered multiset**: each expected batch MUST match exactly one captured batch by contents, but batch **arrival order is NOT asserted** (a fire-and-forget SDK MAY dispatch a size-triggered batch and a later `flush()` batch concurrently, so SPEC §12 does not require in-order delivery). |
 | `expected_event_union_count` | The total number of event objects across **all** captured batches (order-independent union) MUST equal this value. Used with `trackN` to assert no events are lost or duplicated under concurrency, where batch boundaries are nondeterministic. |
 | `expected_unique_message_ids` | When `true`, every `messageId` across all captured events MUST be present and **unique** — no duplicates (no event sent twice) and the count of distinct `messageId`s MUST equal `expected_event_union_count`. Together these pin the atomic swap-and-clear invariant (SPEC.md §3.1, §12.4). |
 
@@ -243,6 +244,12 @@ making an HTTP call.
 > marked `@internal`, or otherwise not exposed in the SDK's documented public API. Exposing
 > a public `setSamplingRate` method would allow callers to force `samplingRate = 0` and
 > silently disable all telemetry.
+
+**Suggested convention.** The name and visibility of this hook are non-normative, but a shared
+convention helps a generated harness locate it without per-SDK guesswork. SDKs SHOULD name it
+`_setSamplingRateForTesting` or the language-idiomatic equivalent (e.g. a package-private
+`SetSamplingRateForTesting` in Go/Java, a `_set_sampling_rate_for_testing` module function in
+Python), kept out of the documented public API per the security requirement above.
 
 The harness MUST apply all `precondition` fields before invoking the operation. If a
 `precondition` field is not supported by the harness implementation, the harness MUST exit with
@@ -439,8 +446,11 @@ The mock server MUST implement the following endpoints:
   MUST gunzip the raw bytes before parsing the JSON body. When the header is absent, the body
   MUST be parsed as-is.
 - Response: the HTTP status and body from the fixture's `mock_response` field.
-- If `mock_response` is `null`, the mock server SHOULD NOT be started (the fixture expects zero
-  HTTP calls). The suite runner MUST verify that zero requests were made.
+- If `mock_response` is `null`, the fixture expects zero HTTP calls. The suite runner SHOULD still
+  start the mock server and point `AVO_INSPECTOR_MOCK_ENDPOINT` at it, so that an erroneous send is
+  captured locally instead of escaping to a real endpoint; it MUST then verify that zero requests
+  were recorded. The runner MUST NOT leave `AVO_INSPECTOR_MOCK_ENDPOINT` pointing at a reachable
+  production host for these fixtures.
 
 **`GET /requests`** — Returns all requests captured since the server started (or last reset).
 

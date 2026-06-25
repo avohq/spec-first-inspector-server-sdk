@@ -144,14 +144,18 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 - [ ] `env == "dev"` MUST force `batchSize = 1` (immediate send), overriding any configured value
   (SPEC.md §12.2).
 - [ ] `trackSchemaFromEvent` resolves with the extracted schema **at enqueue time**; when
-  `batchSize > 1` the resolved value MUST NOT reflect the batch's eventual HTTP status
-  (SPEC.md §4.2, §7.5.2).
+  `batchSize > 1` the resolved value MUST NOT reflect the batch's eventual HTTP status. **Dual
+  resolve-value contract:** with `batchSize == 1` (always true in `dev`) the send is synchronous to
+  the call, so a non-200 resolves `[]` (per §7.5; gated by `wire-3`/`error-2`); with `batchSize > 1`
+  the same method always resolves the extracted schema regardless of the batch's HTTP outcome
+  (SPEC.md §4.2, §7.5, §7.5.2).
 - [ ] The buffer is shared mutable state: enqueue and the swap-and-clear MUST be atomic under a lock,
   and the HTTP send MUST be performed OUTSIDE the lock (SPEC.md §3.1, §12.4).
 - [ ] The buffer is bounded by `maxQueueSize` (default **1000**); on overflow the oldest events are
-  dropped (FIFO) and the drop MUST be logged (count only). Transient (network/timeout) failures
-  SHOULD re-queue at the front; a non-200 MUST NOT re-queue; `messageId` MUST NOT be mutated on
-  re-queue (SPEC.md §12.5).
+  dropped (FIFO) and the drop MUST be logged (count only). On **any** send failure — transient
+  (network/timeout) or non-200 — the batch MUST NOT be re-queued; its events are dropped
+  (at-most-once; the backend does not dedup on `messageId`, so retrying would double-count)
+  (SPEC.md §12.5, §12.6).
 - [ ] `Content-Type` stays `application/json` for batched bodies; gzip applies to the assembled batch
   body per the 1024-byte rule (SPEC.md §7.2, §7.3.5, §12.7).
 
@@ -219,9 +223,9 @@ An SDK is conformant when:
 The `batching` suite (`operation: "sequence"`) automates the multi-event MUST behaviors — size-trigger
 flush, `flush()` drain, `destroy()` discard, `maxQueueSize` FIFO overflow, mixed-stream batches,
 non-200 no-requeue, and concurrent enqueue+flush atomic swap-and-clear (`batch-6`, via the `trackN`
-fan-out). The two remaining behaviors are **SHOULD-level** (time/idle flush §12.3, transient-failure
-re-queue §12.5); they are not normative MUSTs and are verified via the manual matrix in
-`conformance/README.md`.
+fan-out). Two behaviors remain non-automated in the size-bounded suite: time/idle flush (§12.3,
+SHOULD) and transient-failure drop (§12.5, which needs a connection-drop mock); both are verified
+via the manual matrix in `conformance/README.md`.
 
 ---
 
@@ -352,8 +356,9 @@ call).
 ### AC-23 — Buffer bound and failure handling (SPEC.md §12.5)
 
 The buffer is bounded by `maxQueueSize` (default 1000); on overflow the oldest events are dropped
-(FIFO) and the drop is logged (count only, no contents). Transient (network/timeout) failures
-re-queue at the front; a non-200 response does not re-queue; `messageId` is not mutated on re-queue.
+(FIFO) and the drop is logged (count only, no contents). On any send failure — transient
+(network/timeout) or non-200 — the batch is dropped and MUST NOT be re-queued; the SDK performs no
+retry (at-most-once; the backend does not dedup on `messageId`).
 
 ### AC-24 — flush() drains / destroy() discards (SPEC.md §4.6, §12.6)
 

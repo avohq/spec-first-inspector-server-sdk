@@ -96,4 +96,4 @@ automated by `batch-6`:
 | Scenario | Expectation |
 |---|---|
 | Track 1 event, wait > `batchFlushSeconds` (§12.3, SHOULD) | The scheduled/idle flush sends the partial batch (long-running, non-serverless); needs a controllable clock |
-| Send fails transiently (network/timeout) (§12.5, SHOULD) | Batch re-queued at the front; retried on next flush; `messageId` unchanged; needs the mock to simulate a dropped connection |
+| Send fails transiently (network/timeout) (§12.5) | Batch dropped after logging; MUST NOT be re-queued or retried (at-most-once); needs the mock to simulate a dropped connection |

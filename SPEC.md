@@ -378,10 +378,16 @@ POST https://api.avo.app/inspector/v1/track
 When the environment variable `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST send HTTP
 calls to that URL instead of `https://api.avo.app`. This is used by the conformance suite.
 
-> **Security requirement:** SDKs MUST gate `AVO_INSPECTOR_MOCK_ENDPOINT` behind a test-only
-> build flag, debug build, or environment-restriction check. Production builds MUST NOT honor
-> this variable. Honoring this variable in production would allow HTTP downgrade attacks by
-> redirecting traffic to an attacker-controlled endpoint.
+> **Security requirement:** the gate that honors `AVO_INSPECTOR_MOCK_ENDPOINT` MUST be
+> **fail-closed (default-deny)**: an instance constructed with `env: "prod"` MUST ignore the
+> variable unconditionally, regardless of the surrounding process environment. Gating on the SDK's
+> own `env` is the recommended language-agnostic mechanism (a `prod` instance never honors the
+> override); a test-only build flag or debug build is also acceptable. SDKs MUST NOT gate on an
+> ambient variable that defaults to "non-production" when unset (e.g. `NODE_ENV !== "production"`),
+> which **fails open** — many production deployments leave such variables unset, so an attacker who
+> can set `AVO_INSPECTOR_MOCK_ENDPOINT` could redirect traffic (an HTTP downgrade) and capture the
+> `apiKey`. Because all conformance fixtures construct the SDK with `env: "dev"` or `"staging"`,
+> gating on `env` keeps every fixture runnable while production stays locked down.
 
 ### 7.2 Request Headers
 
@@ -629,15 +635,15 @@ be triggered by a later call, by the scheduled flush, or by `flush()`). Therefor
 | Event enqueued successfully | `trackSchemaFromEvent` resolves with the extracted schema at enqueue time. |
 | Event dropped by sampling at enqueue | `trackSchemaFromEvent` resolves with the extracted schema; the event is not buffered and no call is made (see §7.7). |
 | Synchronous internal error before enqueue | `Promise.reject("Avo Inspector: something went wrong. Please report to support@avo.app.")` — unchanged from the table above. |
-| Batch send returns non-200 | Logged per §7.5 (in dev/staging with logging enabled). The batch MUST NOT be re-queued (a permanent rejection; re-queuing would loop). Not observable to any `trackSchemaFromEvent` promise. |
-| Batch send network error / timeout | Logged per §7.5. The batch's events SHOULD be re-queued at the front of the buffer for a later flush (subject to `maxQueueSize`; see Section 12). Not observable to any `trackSchemaFromEvent` promise. |
+| Batch send returns non-200 | Logged per §7.5 (in dev/staging with logging enabled). The batch MUST NOT be re-queued; it is dropped. Not observable to any `trackSchemaFromEvent` promise. |
+| Batch send network error / timeout | Logged per §7.5. The batch MUST NOT be re-queued; its events are dropped (at-most-once delivery — see §3.2, §12.6). Not observable to any `trackSchemaFromEvent` promise. |
 
 Consequently, the `Promise.resolve([])`-on-non-200 behavior in the §7.5 table is observable per call
 **only** when the send is synchronous to the call (`batchSize == 1`, always true in `dev`). When
 `batchSize > 1`, `trackSchemaFromEvent` always resolves with the extracted schema at enqueue,
-regardless of the batch's eventual HTTP outcome. Re-queue MUST take the buffer lock and MUST NOT
-mutate any event's `messageId` (the stable `messageId` lets the backend tolerate duplicate
-submissions, so at-least-once redelivery is acceptable).
+regardless of the batch's eventual HTTP outcome. A batch that fails to send (for any reason) is
+dropped after logging and MUST NOT be re-queued — the SDK provides at-most-once delivery for
+buffered events (see §3.2, §12.6) and performs no retry.
 
 ### 7.6 Timeout
 
@@ -891,6 +897,13 @@ follow their own natural type system rather than reproduce a JS-specific quirk.
   `"list(string)"` with `children: [[], "int"]`; `{ "v": [undefined, 1] }` →
   `"list(string)"` with `children: ["null", "int"]`. Statically-typed SDKs MAY differ here per their
   own type system; this asymmetry is not a conformance gate.
+
+  **Divergence from the §9.2 pseudocode.** The §9.2 pseudocode treats a `null` value as the scalar
+  type string `"null"` (its object branch is explicitly "non-null Object"). The JS reference parser
+  diverges because `typeof null === "object"`, so `null` falls into the object branch and yields
+  `[]`. These two descriptions are intentionally different: the §9.2 pseudocode is the recommended
+  normative behavior for new SDKs, and this reference-parser quirk is documented only for fidelity
+  with `node-avo-inspector`. Neither the quirk nor the divergence is a conformance gate.
 
 ---
 
@@ -1265,12 +1278,12 @@ OUTSIDE the lock. The buffer is shared mutable state and MUST be synchronized pe
   cap, the SDK MUST drop the **oldest** buffered events first (FIFO) to make room for the newest.
 - Drops due to the cap MUST be logged (a count only — never event contents; see §7.5.1) when logging
   is enabled. Silent data loss is not acceptable on a long-running server.
-- On a **transient** send failure (network error or timeout), the SDK SHOULD re-queue the failed
-  batch's events at the **front** of the buffer for a later flush attempt, subject to `maxQueueSize`.
-- On a **non-200** HTTP response, the SDK MUST NOT re-queue (a permanent rejection would otherwise
-  loop forever); the batch is dropped and the status is logged per §7.5.
-- Re-queue MUST take the buffer lock and MUST NOT mutate any event's `messageId`. Because the backend
-  tolerates duplicate submissions of the same `messageId`, at-least-once redelivery is acceptable.
+- On **any** send failure — transient (network error or timeout) or a **non-200** HTTP response —
+  the batch MUST NOT be re-queued; its events are dropped and the failure is logged per §7.5. The
+  SDK does not retry sends: buffered events have at-most-once delivery (see §3.2, §12.6).
+- The Inspector backend does not deduplicate on `messageId`, so retrying a failed batch would
+  double-count events. At-most-once delivery is the deliberate v1 contract; callers that need
+  stronger guarantees must `flush()` and handle failures themselves.
 
 ### 12.6 Persistence and Lifecycle
 
@@ -1337,6 +1350,8 @@ using the corresponding regex rather than comparing to the placeholder string ex
 
 `AVO_INSPECTOR_MOCK_ENDPOINT` — when set, the SDK under test MUST send HTTP calls to this URL
 instead of `https://api.avo.app`. The wire-protocol suite injects a local mock server URL here.
+The SDK MUST honor it only for non-`prod` instances and MUST fail closed in production (see the
+§7.1 security requirement); all fixtures construct the SDK with `env: "dev"` or `"staging"`.
 
 ---
 
