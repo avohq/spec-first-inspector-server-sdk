@@ -1,6 +1,6 @@
 {
   "$comment": "Machine-readable map of SPEC.md / runner-contract.md behaviors to the conformance fixture(s) that gate them. \"automated\" entries are asserted by `npm run conformance:run` (the suite-runner drives the harness and asserts captured mock traffic). \"manual\" entries are NOT covered by the 30 fixtures and must be verified out-of-band; they include BOTH SHOULD-level behaviors (e.g. time/idle flush) AND MUST-level requirements that need a controllable clock, a connection-drop mock, or a non-fixture input (e.g. the prod fail-closed mock-endpoint gate, constructor validation, process-wide logging state, typed 0.0->float). See conformance/README.md.",
-  "spec_version": "1.0.0",
+  "spec_version": "2.0.0",
   "runner_contract_version": "1.0.0",
   "total_fixtures": 30,
   "automated": [

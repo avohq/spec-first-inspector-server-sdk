@@ -97,10 +97,12 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   **Required fields (MUST be present in every wire body):**
   `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
   `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
-  `messageId`, `samplingRate`, `streamId`, `type`.
+  `messageId`, `samplingRate`, `sessionId`, `streamId`, `type`.
+  (`sessionId` MUST be the empty string `""` for server SDKs — the ingestion pipeline drops
+  events that omit it.)
 
   **Forbidden fields (MUST NOT appear in any wire body):**
-  `sessionId`, `trackingId`, `visitorId`, `userId`.
+  `trackingId`, `visitorId`, `userId`.
 - [ ] `libVersion` MUST be a plain SemVer string (e.g., `"1.2.0"`). No suffix (`+spec`, `-rc1`,
   etc.) is permitted. Define it as a constant in a dedicated version file (SPEC.md §7.3.3).
 - [ ] `messageId` MUST be a UUID v4, lowercase hex, hyphenated, unique per event object.
@@ -281,8 +283,9 @@ When `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST POST to that URL instead
 Every outgoing event object contains all required fields:
 `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
 `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
-`messageId`, `samplingRate`, `streamId`, `type`.
-`sessionId`, `trackingId`, `visitorId`, and `userId` MUST NOT be sent.
+`messageId`, `samplingRate`, `sessionId`, `streamId`, `type`.
+`sessionId` MUST be the empty string `""` for server SDKs (required by the Inspector ingestion
+pipeline, which drops events that omit it). `trackingId`, `visitorId`, and `userId` MUST NOT be sent.
 
 ### AC-10 — libVersion plain SemVer, no suffix (SPEC.md §7.3.3)
 

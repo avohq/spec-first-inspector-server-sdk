@@ -10,7 +10,7 @@ info:
     Authorization header.
 
     See SPEC.md (Section 7) for the full normative wire-protocol specification.
-  version: "1.0.0"
+  version: "2.0.0"
   contact:
     name: Avo Support
     email: support@avo.app
@@ -143,10 +143,10 @@ components:
         A single event object in the Inspector v1 track request body.
         type must be 'event'. See schemas/event-body.json for the JSON Schema definition.
       type: object
-      # SPEC.md §7.3.1: trackingId and sessionId MUST NOT be sent in v1.
+      # SPEC.md §3.3, §7.3.1: trackingId MUST NOT be sent. sessionId is REQUIRED and MUST be
+      # the empty string for server SDKs — the ingestion pipeline drops events that omit it.
       not:
         anyOf:
-          - required: [sessionId]
           - required: [trackingId]
       required:
         - apiKey
@@ -157,6 +157,7 @@ components:
         - libPlatform
         - messageId
         - streamId
+        - sessionId
         - createdAt
         - samplingRate
         - type
@@ -196,6 +197,9 @@ components:
         streamId:
           type: string
           description: Caller-supplied streamId, or empty string if none provided.
+        sessionId:
+          type: string
+          description: Always empty string for server SDKs. Required by the Inspector ingestion pipeline.
         createdAt:
           type: string
           pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"

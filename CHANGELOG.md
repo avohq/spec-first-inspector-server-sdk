@@ -22,6 +22,35 @@ spec version declaration patterns.
 
 ---
 
+## [2.0.0] - 2026-06-25 `[WIRE]`
+
+**`sessionId` is now REQUIRED on the wire (empty string `""` for server SDKs); it was previously
+forbidden.** Empirical bisection against the live Avo Inspector API showed that the backend
+ingestion pipeline silently DROPS events whose wire body omits `sessionId`: the request still
+returns `200 {"success":true}`, but the event never appears on the dashboard. Adding
+`sessionId: ""` to an otherwise spec-shaped body is necessary and sufficient for ingestion
+(`trackingId`, `visitorId`, `userId`, `eventId`, `eventHash`, and `avoFunction` are NOT required).
+The canonical browser SDK `js-avo-inspector` always sends `sessionId: ""`.
+
+Server SDKs do not model end-user sessions, so the value is always the empty string `""`, but the
+field MUST be present on every event object.
+
+Per [`VERSIONING.md`](./VERSIONING.md), adding a new required request field is a breaking
+wire-protocol change, so this is a **MAJOR** release. **Downstream SDKs MUST regenerate** — any
+SDK generated from v1.0.0 omits `sessionId` and therefore fails to deliver events.
+
+### Changed
+
+| Artifact | Change |
+|---|---|
+| `SPEC.md` §3.3 | Retitled and rewritten: `sessionId` is required-empty (not forbidden); `visitorId`/`userId` remain forbidden. |
+| `SPEC.md` §7.3 / §7.3.1 | Base body example and Base Body Fields table add `sessionId`; "omitted fields" note now forbids only `trackingId`. |
+| `SPEC.md` §8.2 | `sessionId` MUST be sent as `""`; `trackingId`/`visitorId`/`userId` MUST NOT be sent. |
+| `AGENTS.md` | `sessionId` moved from the Forbidden to the Required wire-field lists (checklist + AC-9). |
+| `schemas/event-body.json`, `openapi.yaml` | `sessionId` added to `required` and `properties`; removed from the forbidden `not.anyOf` (only `trackingId` forbidden). |
+| `conformance/runner/suite-runner.mjs` | `sessionId` removed from `FORBIDDEN_WIRE_FIELDS`. |
+| `conformance/**/fixtures.json` | Every expected event object now includes `"sessionId": ""`. |
+
 ## [1.0.0] - 2026-06-24 `[WIRE]`
 
 Initial publication of the `avohq/spec-first-inspector-server-sdk` spec.
