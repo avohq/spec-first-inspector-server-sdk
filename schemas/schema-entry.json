@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/avohq/spec-first-inspector-server-sdk/main/schemas/schema-entry.json",
+  "title": "SchemaEntry",
+  "description": "A single extracted schema entry representing one event property.",
+  "type": "object",
+  "required": ["propertyName", "propertyType"],
+  "properties": {
+    "propertyName": {
+      "type": "string",
+      "description": "The name of the event property."
+    },
+    "propertyType": {
+      "type": "string",
+      "enum": [
+        "string",
+        "int",
+        "float",
+        "boolean",
+        "null",
+        "object",
+        "list(string)",
+        "list(int)",
+        "list(float)",
+        "list(boolean)",
+        "list(object)",
+        "unknown"
+      ],
+      "description": "The classified type of the property value."
+    },
+    "children": {
+      "description": "Present when propertyType is 'object' or any list type. Each element is a primitive type string, a SchemaEntry object (object-typed children), or a (possibly nested) array of these.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/childElement" }
+    }
+  },
+  "$defs": {
+    "childElement": {
+      "description": "One element of a children array: a primitive type string, a SchemaEntry object, or a (possibly nested) array of these. The three branches are disjoint by JSON type.",
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "string",
+            "int",
+            "float",
+            "boolean",
+            "null",
+            "object",
+            "unknown"
+          ]
+        },
+        { "$ref": "#" },
+        {
+          "type": "array",
+          "items": { "$ref": "#/$defs/childElement" }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "propertyType": {
+            "enum": ["object", "list(string)", "list(int)", "list(float)", "list(boolean)", "list(object)"]
+          }
+        },
+        "required": ["propertyType"]
+      },
+      "then": { "required": ["children"] }
+    },
+    {
+      "if": {
+        "properties": {
+          "propertyType": {
+            "enum": ["string", "int", "float", "boolean", "null", "unknown"]
+          }
+        },
+        "required": ["propertyType"]
+      },
+      "then": { "not": { "required": ["children"] } }
+    }
+  ],
+  "additionalProperties": false
+}

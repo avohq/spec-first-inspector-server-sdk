@@ -1,0 +1,7 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/avohq/spec-first-inspector-server-sdk/main/schemas/event-property-plain.json",
+  "$ref": "schema-entry.json",
+  "title": "EventPropertyPlain",
+  "description": "An event property schema entry used in eventProperties."
+}

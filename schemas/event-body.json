@@ -1,0 +1,96 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://raw.githubusercontent.com/avohq/spec-first-inspector-server-sdk/main/schemas/event-body.json",
+  "title": "EventBody",
+  "description": "A single event object in the Inspector v1 track request body. type must be 'event'.",
+  "type": "object",
+  "required": [
+    "apiKey",
+    "appName",
+    "appVersion",
+    "libVersion",
+    "env",
+    "libPlatform",
+    "messageId",
+    "streamId",
+    "createdAt",
+    "samplingRate",
+    "type",
+    "eventName",
+    "eventProperties"
+  ],
+  "properties": {
+    "apiKey": {
+      "type": "string",
+      "minLength": 1,
+      "description": "The Inspector API key passed to the constructor."
+    },
+    "appName": {
+      "type": "string",
+      "description": "Application name. Empty string if not provided."
+    },
+    "appVersion": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Application version (version constructor option)."
+    },
+    "libVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+$",
+      "description": "SDK library version. Plain SemVer string, no suffix."
+    },
+    "env": {
+      "type": "string",
+      "enum": ["dev", "staging", "prod"],
+      "description": "Environment. Exact wire values."
+    },
+    "libPlatform": {
+      "type": "string",
+      "minLength": 1,
+      "description": "SDK platform/language identifier (e.g. node, ruby, python, go)."
+    },
+    "messageId": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "description": "UUID v4, unique per event."
+    },
+    "streamId": {
+      "type": "string",
+      "description": "Caller-supplied streamId, or empty string if none provided."
+    },
+    "createdAt": {
+      "type": "string",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$",
+      "description": "ISO 8601 UTC timestamp with millisecond precision."
+    },
+    "samplingRate": {
+      "type": "number",
+      "minimum": 0.0,
+      "maximum": 1.0,
+      "description": "Current sampling rate [0.0, 1.0]. Initial value 1.0."
+    },
+    "type": {
+      "type": "string",
+      "const": "event",
+      "description": "Literal string 'event'. Must be present."
+    },
+    "eventName": {
+      "type": "string",
+      "description": "Name of the tracked event."
+    },
+    "eventProperties": {
+      "type": "array",
+      "items": {
+        "$ref": "event-property-plain.json"
+      },
+      "description": "Extracted schema — array of plain property objects."
+    }
+  },
+  "$comment": "Unknown extra fields are permitted — the Inspector backend ignores fields it does not read (write-api consumes only named keys). Only sessionId and trackingId are forbidden (SPEC.md §7.3.1, §13). This matches openapi.yaml EventBody.",
+  "not": {
+    "anyOf": [
+      { "required": ["sessionId"] },
+      { "required": ["trackingId"] }
+    ]
+  }
+}

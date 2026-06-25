@@ -1,0 +1,13 @@
+{
+  "name": "spec-first-inspector-server-sdk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Validation tooling for the Avo Inspector server SDK spec repository. The spec itself is the product; this package is not published.",
+  "scripts": {
+    "validate:fixtures": "node scripts/validate-fixtures.mjs",
+    "conformance:run": "node conformance/runner/suite-runner.mjs"
+  },
+  "devDependencies": {
+    "ajv": "^8.17.1"
+  }
+}
