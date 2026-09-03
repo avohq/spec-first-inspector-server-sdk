@@ -237,5 +237,197 @@
     "expected_request_count": 0,
     "expected_promise_outcome": "resolve",
     "notes": "Batching is active because env is 'staging' (so batchSize is NOT forced to 1) and batchSize is 30. A single trackSchemaFromEvent enqueues one event, which is below the size threshold, so the SDK MUST NOT send an HTTP request before a flush — the suite runner verifies zero captured requests. The promise still resolves (with the extracted schema) at enqueue time (SPEC.md §4.2, §7.5.2). The harness invocation completes well within batchFlushSeconds (30s), so no time-based flush occurs. This is the only batching behavior the single-invocation harness can assert automatically; flush()-drains, size-triggered flush, max-queue overflow, and no-requeue-on-rejection are now covered by the dedicated batching suite (batch-1 through batch-6). Only time-based flush and transient-failure drop remain in the manual matrix in conformance/README.md (they need a controllable clock and a connection-drop mock)."
+  },
+  {
+    "fixture_id": "wire-9",
+    "description": "Gateway options: outputReference, originHint and per-event appVersion all set are sent as top-level siblings of eventProperties",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "purchase",
+      "eventProperties": { "plan": "pro", "seats": 3 },
+      "streamId": "stream-gw",
+      "options": { "outputReference": "meta-x7k2q", "originHint": "android", "appVersion": "4.2.0" }
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": "4.2.0",
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "streamId": "stream-gw",
+        "sessionId": "",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "purchase",
+        "outputReference": "meta-x7k2q",
+        "originHint": "android",
+        "eventProperties": [
+          { "propertyName": "plan", "propertyType": "string" },
+          { "propertyName": "seats", "propertyType": "int" }
+        ]
+      }
+    ],
+    "expected_promise_outcome": "resolve",
+    "notes": "SPEC.md §4.2.1 / §7.3.6 row 1 (originHint set + appVersion provided). The harness passes input.options VERBATIM as the fourth argument. outputReference and originHint MUST be top-level keys of the event object, never inside eventProperties; appVersion is the per-event override '4.2.0', not the constructor's '1.0.0'. eventProperties is unchanged by options."
+  },
+  {
+    "fixture_id": "wire-10",
+    "description": "originHint set without a per-event appVersion: originHint is trimmed, appVersion is a literal null, outputReference is absent",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "purchase",
+      "eventProperties": { "plan": "pro", "seats": 3 },
+      "streamId": "stream-gw",
+      "options": { "originHint": "  android  " }
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": null,
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "streamId": "stream-gw",
+        "sessionId": "",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "purchase",
+        "outputReference": "<absent>",
+        "originHint": "android",
+        "eventProperties": [
+          { "propertyName": "plan", "propertyType": "string" },
+          { "propertyName": "seats", "propertyType": "int" }
+        ]
+      }
+    ],
+    "expected_promise_outcome": "resolve",
+    "notes": "SPEC.md §7.3.6 row 2 (originHint set + no usable appVersion). The event is source-scoped, so the constructor version '1.0.0' never applies: appVersion MUST be a literal JSON null (the key is still present). originHint is trimmed ('  android  ' -> 'android'). outputReference was not supplied, so the key MUST NOT exist on the event at all — asserted by the '<absent>' placeholder (a present-with-null or present-with-empty-string key fails). The SDK SHOULD also emit its one-time originHint-without-appVersion warning on stderr; the runner does not assert logging."
+  },
+  {
+    "fixture_id": "wire-11",
+    "description": "outputReference and per-event appVersion set without originHint: both trimmed, appVersion overrides the constructor version, originHint is absent",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "purchase",
+      "eventProperties": { "plan": "pro", "seats": 3 },
+      "streamId": "stream-gw",
+      "options": { "outputReference": " meta-x7k2q ", "appVersion": " 4.2.0 " }
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": "4.2.0",
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "streamId": "stream-gw",
+        "sessionId": "",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "purchase",
+        "outputReference": "meta-x7k2q",
+        "originHint": "<absent>",
+        "eventProperties": [
+          { "propertyName": "plan", "propertyType": "string" },
+          { "propertyName": "seats", "propertyType": "int" }
+        ]
+      }
+    ],
+    "expected_promise_outcome": "resolve",
+    "notes": "SPEC.md §7.3.6 row 3 (originHint absent + appVersion provided): the per-event value overrides the constructor version. Both values are trimmed before sending. originHint was not supplied, so its key MUST NOT exist ('<absent>')."
+  },
+  {
+    "fixture_id": "wire-12",
+    "description": "Empty and whitespace-only options are treated as absent: neither gateway key is sent, appVersion falls back to the constructor version — body identical to the no-options shape",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "purchase",
+      "eventProperties": { "plan": "pro", "seats": 3 },
+      "streamId": "stream-gw",
+      "options": { "outputReference": "   ", "originHint": "", "appVersion": "  " }
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": "1.0.0",
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "streamId": "stream-gw",
+        "sessionId": "",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "purchase",
+        "outputReference": "<absent>",
+        "originHint": "<absent>",
+        "eventProperties": [
+          { "propertyName": "plan", "propertyType": "string" },
+          { "propertyName": "seats", "propertyType": "int" }
+        ]
+      }
+    ],
+    "expected_promise_outcome": "resolve",
+    "notes": "SPEC.md §7.3.6 row 4 and the omission rule: after trimming, every option value is empty, so each is absent — outputReference and originHint MUST NOT be present as keys (never null, never ''), and appVersion is the constructor's '1.0.0'. The resulting body has exactly the same key set as a call made without options (compare wire-1), which is the backward-compatibility guarantee of SPEC.md §4.2.1."
+  },
+  {
+    "fixture_id": "wire-13",
+    "description": "Property-name collision: event properties literally named outputReference / originHint / appVersion stay in the schema; the top-level gateway fields come only from options",
+    "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
+    "operation": "trackSchemaFromEvent",
+    "input": {
+      "eventName": "purchase",
+      "eventProperties": { "outputReference": "in-schema", "originHint": 7, "appVersion": true, "plan": "pro" },
+      "streamId": "stream-gw",
+      "options": { "outputReference": "meta-x7k2q", "originHint": "web" }
+    },
+    "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
+    "expected_request_body": [
+      {
+        "apiKey": "test-key",
+        "appName": "TestApp",
+        "appVersion": null,
+        "libVersion": "<semver>",
+        "env": "dev",
+        "libPlatform": "<sdk-platform>",
+        "messageId": "<uuid-v4>",
+        "streamId": "stream-gw",
+        "sessionId": "",
+        "createdAt": "<iso8601>",
+        "samplingRate": 1.0,
+        "type": "event",
+        "eventName": "purchase",
+        "outputReference": "meta-x7k2q",
+        "originHint": "web",
+        "eventProperties": [
+          { "propertyName": "outputReference", "propertyType": "string" },
+          { "propertyName": "originHint", "propertyType": "int" },
+          { "propertyName": "appVersion", "propertyType": "boolean" },
+          { "propertyName": "plan", "propertyType": "string" }
+        ]
+      }
+    ],
+    "expected_promise_outcome": "resolve",
+    "notes": "SPEC.md §7.3.6: options MUST NOT touch extractSchema and the schema MUST NOT populate the gateway fields. The four event properties (including the ones that happen to share a name with the gateway fields) appear in eventProperties with their extracted types in input order, while the top-level outputReference / originHint carry the options values and appVersion is null (originHint set, no per-event override — the boolean 'appVersion' property is a property, not a version)."
   }
 ]

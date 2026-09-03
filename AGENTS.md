@@ -36,12 +36,14 @@ Read every file in this order before writing any code. Do not skip files.
 6. **`conformance/schema-extraction/fixtures.json`** — 13 golden schema-extraction fixtures.
    Your `extractSchema` implementation MUST produce the exact `expected` output for each `input`.
 7. **`conformance/wire-protocol/fixtures.json`** — Wire-protocol golden fixtures (wire-1 through
-   wire-8). Your `trackSchemaFromEvent` implementation MUST pass all of these.
+   wire-13; wire-9 through wire-13 cover the OPTIONAL gateway `options`, SPEC.md §4.2.1 / §7.3.6).
+   Your `trackSchemaFromEvent` implementation MUST pass all of these.
 8. **`conformance/error-handling/fixtures.json`** — Error-handling fixtures. Your implementation
    MUST pass all of these (REQUIRED suite).
 9. **`conformance/batching/fixtures.json`** — Batching golden fixtures (`batch-1` through
-   `batch-6`), driven via the `operation: "sequence"` multi-event mode (including the `batch-6`
-   `trackN` concurrency fan-out). Your batching implementation MUST pass all of these.
+   `batch-7`), driven via the `operation: "sequence"` multi-event mode (including the `batch-6`
+   `trackN` concurrency fan-out and the `batch-7` per-event `options` batch). Your batching
+   implementation MUST pass all of these.
 
 ---
 
@@ -103,6 +105,25 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 
   **Forbidden fields (MUST NOT appear in any wire body):**
   `trackingId`, `visitorId`, `userId`.
+
+  **Optional gateway fields (present ONLY when the caller supplied a non-blank value):**
+  `outputReference`, `originHint` — top-level siblings of `eventProperties`, never inside the
+  schema, never sent as `null` or `""` (SPEC.md §7.3.6).
+- [ ] `trackSchemaFromEvent` accepts an OPTIONAL trailing `options` parameter (or overload) —
+  `{ outputReference?, originHint?, appVersion? }` — without breaking existing call sites; a call
+  without `options` produces a body identical to the pre-2.1.0 body (SPEC.md §4.2.1).
+- [ ] Each option value is normalized independently: trimmed; absent / `null` / empty /
+  whitespace-only (and, in dynamically-typed languages, non-string) values are treated as absent
+  and the key is OMITTED (SPEC.md §7.3.6).
+- [ ] Wire `appVersion` follows the four-cell rule: `options.appVersion` when provided; a literal
+  JSON `null` when `originHint` is set and no usable `options.appVersion` was given; otherwise the
+  constructor `version`. The key is always present. SHOULD warn once per process (without logging
+  the values) when `originHint` is set and `appVersion` resolves to `null` (SPEC.md §7.3.6, §7.1
+  backend note).
+- [ ] `options` never touches `extractSchema`: an event property literally named
+  `outputReference` / `originHint` / `appVersion` stays in `eventProperties` (`wire-13`); options
+  are per event and two calls for the same event with different `outputReference` are both sent
+  (`batch-7`).
 - [ ] `libVersion` MUST be a plain SemVer string (e.g., `"1.2.0"`). No suffix (`+spec`, `-rc1`,
   etc.) is permitted. Define it as a constant in a dedicated version file (SPEC.md §7.3.3).
 - [ ] `messageId` MUST be a UUID v4, lowercase hex, hyphenated, unique per event object.
@@ -220,9 +241,9 @@ variable is set.
 An SDK is conformant when:
 
 - All 13 `schema-extraction` suite fixtures pass.
-- All 8 `wire-protocol` suite fixtures pass.
+- All 13 `wire-protocol` suite fixtures pass.
 - All `error-handling` suite fixtures pass.
-- All 6 `batching` suite fixtures pass.
+- All 7 `batching` suite fixtures pass.
 
 The `batching` suite (`operation: "sequence"`) automates the multi-event MUST behaviors — size-trigger
 flush, `flush()` drain, `destroy()` discard, `maxQueueSize` FIFO overflow, mixed-stream batches,
@@ -235,7 +256,7 @@ via the manual matrix in `conformance/README.md`.
 
 ## 5. Definition of Done
 
-The SDK is complete when all 25 SPEC.md acceptance criteria are satisfied.
+The SDK is complete when all 27 SPEC.md acceptance criteria are satisfied.
 
 ### AC-1 — Constructor apiKey validation (SPEC.md §4.1)
 
@@ -286,6 +307,7 @@ Every outgoing event object contains all required fields:
 `messageId`, `samplingRate`, `sessionId`, `streamId`, `type`.
 `sessionId` MUST be the empty string `""` for server SDKs (required by the Inspector ingestion
 pipeline, which drops events that omit it). `trackingId`, `visitorId`, and `userId` MUST NOT be sent.
+`appVersion` is a string except under the `originHint` rule of AC-27, where it is a literal `null`.
 
 ### AC-10 — libVersion plain SemVer, no suffix (SPEC.md §7.3.3)
 
@@ -375,3 +397,18 @@ retry (at-most-once; the backend does not dedup on `messageId`).
 A flushed batch is a JSON array of self-contained event objects that MAY mix `streamId`/
 `eventName` across elements. `Content-Type` stays `application/json`; gzip applies to the assembled
 batch body per the 1024-byte rule.
+
+### AC-26 — Gateway options on the wire (SPEC.md §4.2.1, §7.3.6)
+
+`trackSchemaFromEvent` accepts an OPTIONAL trailing `options` parameter (or an overload) carrying
+`outputReference`, `originHint`, and `appVersion`. `outputReference` / `originHint` are sent as
+top-level siblings of `eventProperties` — trimmed, and OMITTED entirely (never `null` / `""`) when
+absent, empty, or whitespace-only. They never enter the schema, and `options` are resolved per call
+(`wire-9` – `wire-13`, `batch-7`). A call without `options` produces the pre-2.1.0 body.
+
+### AC-27 — Per-event `appVersion` rule (SPEC.md §7.3.1, §7.3.6)
+
+Wire `appVersion` is `options.appVersion` when provided (trimmed); a literal JSON `null` when
+`originHint` is set and no usable `options.appVersion` was given; otherwise the constructor
+`version`. The key is always present. When it resolves to `null`, the SDK SHOULD log a one-time
+warning that never includes the option values (`wire-10`, `wire-12`, `wire-13`).

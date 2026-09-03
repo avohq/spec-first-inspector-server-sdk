@@ -1,8 +1,8 @@
 {
-  "$comment": "Machine-readable map of SPEC.md / runner-contract.md behaviors to the conformance fixture(s) that gate them. \"automated\" entries are asserted by `npm run conformance:run` (the suite-runner drives the harness and asserts captured mock traffic). \"manual\" entries are NOT covered by the 30 fixtures and must be verified out-of-band; they include BOTH SHOULD-level behaviors (e.g. time/idle flush) AND MUST-level requirements that need a controllable clock, a connection-drop mock, or a non-fixture input (e.g. the prod fail-closed mock-endpoint gate, constructor validation, process-wide logging state, typed 0.0->float). See conformance/README.md.",
-  "spec_version": "2.0.0",
-  "runner_contract_version": "1.0.0",
-  "total_fixtures": 30,
+  "$comment": "Machine-readable map of SPEC.md / runner-contract.md behaviors to the conformance fixture(s) that gate them. \"automated\" entries are asserted by `npm run conformance:run` (the suite-runner drives the harness and asserts captured mock traffic). \"manual\" entries are NOT covered by the 36 fixtures and must be verified out-of-band; they include BOTH SHOULD-level behaviors (e.g. time/idle flush) AND MUST-level requirements that need a controllable clock, a connection-drop mock, or a non-fixture input (e.g. the prod fail-closed mock-endpoint gate, constructor validation, process-wide logging state, typed 0.0->float). See conformance/README.md.",
+  "spec_version": "2.1.0",
+  "runner_contract_version": "1.1.0",
+  "total_fixtures": 36,
   "automated": [
     {
       "behavior": "Schema extraction: primitive classification (boolean/int/string/float)",
@@ -301,9 +301,91 @@
         "wire-8",
         "batch-3"
       ]
+    },
+    {
+      "behavior": "Gateway options: outputReference / originHint sent as top-level siblings of eventProperties; per-event appVersion override wins when provided",
+      "spec": [
+        "SPEC.md §4.2.1",
+        "SPEC.md §7.3.6"
+      ],
+      "fixtures": [
+        "wire-9",
+        "wire-11"
+      ]
+    },
+    {
+      "behavior": "Gateway options normalization: trimmed; empty / whitespace-only => key OMITTED (never null / \"\"), asserted via the \"<absent>\" placeholder",
+      "spec": [
+        "SPEC.md §7.3.6",
+        "runner-contract.md Format validation (<absent>)"
+      ],
+      "fixtures": [
+        "wire-10",
+        "wire-11",
+        "wire-12"
+      ]
+    },
+    {
+      "behavior": "appVersion four-cell rule: originHint set + no per-event version => literal null; originHint absent + no per-event version => constructor version",
+      "spec": [
+        "SPEC.md §7.3.1",
+        "SPEC.md §7.3.6"
+      ],
+      "fixtures": [
+        "wire-10",
+        "wire-12",
+        "wire-13"
+      ]
+    },
+    {
+      "behavior": "No cross-contamination: event properties named outputReference / originHint / appVersion stay in the schema; gateway fields come only from options",
+      "spec": [
+        "SPEC.md §7.3.6"
+      ],
+      "fixtures": [
+        "wire-13"
+      ]
+    },
+    {
+      "behavior": "options are per event: same event tracked with different outputReference values (and none) lands as distinct elements in one batch, no deduplication",
+      "spec": [
+        "SPEC.md §4.2.1",
+        "SPEC.md §12.7"
+      ],
+      "fixtures": [
+        "batch-7"
+      ]
+    },
+    {
+      "behavior": "Backward compatibility: a call without options (all pre-2.1.0 fixtures) carries no gateway keys and the constructor appVersion",
+      "spec": [
+        "SPEC.md §4.2.1"
+      ],
+      "fixtures": [
+        "wire-1",
+        "wire-12",
+        "batch-7"
+      ]
     }
   ],
   "manual": [
+    {
+      "behavior": "Dynamically-typed SDKs treat non-string option values (number/boolean/object/array) as absent without stringifying",
+      "spec": [
+        "SPEC.md §7.3.6 normalization rule 3"
+      ],
+      "reason": "Not expressible as a universal fixture: statically-typed harnesses cannot receive a non-string in a string-typed option. Verify via the SDK's own unit tests in dynamically-typed languages.",
+      "fixtures": []
+    },
+    {
+      "behavior": "One-time warning when originHint is set without a usable appVersion (SHOULD); the warning never includes option values",
+      "spec": [
+        "SPEC.md §7.3.6",
+        "SPEC.md §7.1 backend note"
+      ],
+      "reason": "Logging is observed on stderr, not asserted by the fixtures. Verify via the SDK's own unit tests.",
+      "fixtures": []
+    },
     {
       "behavior": "Time / idle scheduled flush after batchFlushSeconds (SHOULD)",
       "spec": [
@@ -346,7 +428,7 @@
         "SPEC.md §4.1",
         "SPEC.md §6.3"
       ],
-      "reason": "No fixture constructs an invalid instance (all 30 use valid constructor blocks). Verify via the SDK's own unit tests; the harness surfaces a constructor throw as passed:false + exit code 1.",
+      "reason": "No fixture constructs an invalid instance (all 36 use valid constructor blocks). Verify via the SDK's own unit tests; the harness surfaces a constructor throw as passed:false + exit code 1.",
       "fixtures": []
     },
     {

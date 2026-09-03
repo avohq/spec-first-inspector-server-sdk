@@ -12,12 +12,12 @@
 // maintained product. SDK authors write the equivalent thin harness for their own
 // SDK and point the suite-runner at it via `--harness "<command>"`.
 //
-// HARNESS_CONTRACT_VERSION: 1.0.0
+// HARNESS_CONTRACT_VERSION: 1.1.0
 // =============================================================================
 
 import { AvoInspector } from "./sdk.mjs";
 
-const HARNESS_CONTRACT_VERSION = "1.0.0";
+const HARNESS_CONTRACT_VERSION = "1.1.0";
 
 /**
  * Read the entire stdin stream to a UTF-8 string (the single input envelope line).
@@ -84,18 +84,24 @@ function applyPrecondition(inspector, precondition, fixtureId) {
 }
 
 /**
- * Invoke trackSchemaFromEvent with contract-correct arity: omit the third argument
- * entirely when no streamId is given, so SDKs inspecting arguments.length see the right shape.
+ * Invoke trackSchemaFromEvent with contract-correct arity: omit the trailing
+ * arguments entirely when the fixture does not supply them, so SDKs inspecting
+ * arguments.length see the right shape. `options` (SPEC §4.2.1) is passed VERBATIM —
+ * the harness never normalizes it; that is the SDK's job and what the fixture asserts.
  * @param {AvoInspector} inspector - The inspector instance.
  * @param {string} eventName - The event name.
  * @param {*} eventProperties - The event properties.
  * @param {string} [streamId] - Optional stream id; omitted from the call when undefined.
+ * @param {Object} [options] - Optional gateway TrackOptions; omitted from the call when undefined.
  * @returns {Promise<Array>} The trackSchemaFromEvent result.
  */
-// Call trackSchemaFromEvent with the contract-correct arity: omit the third
-// argument entirely when no streamId is provided, so SDKs that inspect
-// arguments.length observe the right invocation shape.
-function callTrack(inspector, eventName, eventProperties, streamId) {
+// Call trackSchemaFromEvent with the contract-correct arity: omit trailing
+// arguments the fixture did not provide (runner-contract "trackSchemaFromEvent").
+function callTrack(inspector, eventName, eventProperties, streamId, options) {
+  if (options !== undefined) {
+    // options present: streamId travels as-is (undefined when the fixture has none).
+    return inspector.trackSchemaFromEvent(eventName, eventProperties, streamId, options);
+  }
   return streamId === undefined
     ? inspector.trackSchemaFromEvent(eventName, eventProperties)
     : inspector.trackSchemaFromEvent(eventName, eventProperties, streamId);
@@ -115,7 +121,7 @@ async function runSequence(inspector, steps, fixtureId) {
   for (const step of steps) {
     const action = step && step.action;
     if (action === "track") {
-      const value = await callTrack(inspector, step.eventName, step.eventProperties, step.streamId);
+      const value = await callTrack(inspector, step.eventName, step.eventProperties, step.streamId, step.options);
       actual.push({ action: "track", outcome: "resolve", value });
     } else if (action === "trackN") {
       const count = step.count;
@@ -210,7 +216,7 @@ async function main() {
       let outcome = "resolve";
       let actual;
       try {
-        actual = await callTrack(inspector, input.eventName, input.eventProperties, input.streamId);
+        actual = await callTrack(inspector, input.eventName, input.eventProperties, input.streamId, input.options);
       } catch (reason) {
         outcome = "reject";
         actual = reason;

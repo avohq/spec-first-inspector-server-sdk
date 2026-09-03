@@ -122,18 +122,28 @@ step 3 and the `input` row above:
 
 `input` MAY be `null` (fixture-8). The harness MUST pass `null` through to the SDK.
 
-**`"trackSchemaFromEvent"`** — calls `inspector.trackSchemaFromEvent(eventName, eventProperties, streamId?)`:
+**`"trackSchemaFromEvent"`** — calls `inspector.trackSchemaFromEvent(eventName, eventProperties, streamId?, options?)`:
 
 ```json
 {
   "eventName": "Event Name",
   "eventProperties": { "key": "value" },
-  "streamId": "optional-stream-id"
+  "streamId": "optional-stream-id",
+  "options": { "outputReference": "meta-x7k2q", "originHint": "android", "appVersion": "4.2.0" }
 }
 ```
 
-`streamId` is optional. When absent, the harness MUST call `trackSchemaFromEvent` without the
-third argument (not with `undefined` explicitly, unless the language requires it).
+`streamId` is optional. When absent (and `options` is also absent), the harness MUST call
+`trackSchemaFromEvent` without the third argument (not with `undefined` explicitly, unless the
+language requires it).
+
+`options` is optional (SPEC.md §4.2.1 / §7.3.6). When present, the harness MUST pass the object
+**verbatim** as the fourth argument (or the language-idiomatic options parameter / overload) — it
+MUST NOT trim, drop, or coerce any value; normalization is the SDK's job and is what the fixture
+asserts. When `options` is present but `streamId` is absent, pass the language's null/undefined
+for `streamId`. When `options` is absent, the harness MUST NOT pass a fourth argument (not an empty
+object), so the fixture exercises the pre-2.1.0 call shape. Statically-typed harnesses map each
+key to the corresponding typed option field; all fixture values are strings.
 
 ### Multi-event sequence mode (`operation: "sequence"`)
 
@@ -165,7 +175,7 @@ Each element of `steps` is one action, executed in order on the same instance:
 
 | `action` | Harness behavior |
 |---|---|
-| `"track"` | Call `trackSchemaFromEvent(eventName, eventProperties, streamId?)` and await it. Same `eventProperties` / `streamId` semantics as the single-event `trackSchemaFromEvent` mode. |
+| `"track"` | Call `trackSchemaFromEvent(eventName, eventProperties, streamId?, options?)` and await it. Same `eventProperties` / `streamId` / `options` semantics as the single-event `trackSchemaFromEvent` mode (`options`, when present on the step, is passed verbatim for that call only). |
 | `"flush"` | Call `flush(timeoutMs?)` and await it. |
 | `"destroy"` | Call `destroy()`. |
 | `"trackN"` | Fire `count` (required int ≥ 1) **concurrent** `trackSchemaFromEvent` calls — real threads/goroutines/parallel tasks where the runtime supports it, else concurrently-scheduled awaited tasks — each enqueuing one distinct event named `${eventNamePrefix}${i}` (`i` from `0` to `count-1`) with empty `eventProperties` and the optional `streamId` (default `""`). The harness MUST join/await all `count` calls before the step resolves. Used to assert the atomic swap-and-clear under real concurrency (SPEC.md §3.1, §12.4); see [Concurrency fan-out](#concurrency-fan-out-trackn). |
@@ -403,9 +413,10 @@ failure regardless of the regex rule.
 | `"<iso8601>"` | `createdAt` | `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/` — a 3-digit millisecond suffix (e.g. `.000Z`) MUST be present; the value of those digits is not constrained. |
 | `"<semver>"` | `libVersion` | `/^\d+\.\d+\.\d+$/` — plain SemVer, no suffix (e.g., `"1.2.0"`, not `"1.2.0+spec"`). |
 | `"<sdk-platform>"` | `libPlatform` | Any non-empty string identifying the SDK language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). Suite runner accepts any non-empty value. |
+| `"<absent>"` | any key (used for `outputReference` / `originHint`) | The key MUST NOT be present on the captured event object at all — not `null`, not `""`. This is how a fixture asserts the omission rule of SPEC.md §7.3.6 even though the runner otherwise tolerates extra keys. |
 
-All four fields are REQUIRED on every event sent to the Inspector API. A missing field is a
-conformance failure.
+The four format-validated fields are REQUIRED on every event sent to the Inspector API. A missing
+field is a conformance failure. `"<absent>"` is the inverse: presence is the failure.
 
 ### Suite runner algorithm for format-validated fields
 
@@ -415,7 +426,10 @@ For each field in `expected_request_body`:
    corresponding regex in the table above.
 2. Assert that the actual field value is a non-empty string matching the regex.
 3. If the actual value is absent or does not match the regex, mark the fixture as failed.
-4. If the expected value is not a placeholder, compare by exact equality.
+4. If the expected value is the `"<absent>"` placeholder, assert that the key is **not present** on
+   the captured event object (a key present with `null` or `""` is a failure).
+5. If the expected value is not a placeholder, compare by exact equality (a literal `null` expected
+   value, e.g. `"appVersion": null`, requires a literal JSON `null` on the wire).
 
 ---
 
@@ -553,6 +567,9 @@ submitting conformance results.
 - [ ] Harness handles the `"trackN"` sequence action: fires `count` `trackSchemaFromEvent` calls
       concurrently (real parallelism where the runtime supports it), and joins all of them before
       resolving the step (batch-6 concurrency fixture).
+- [ ] Harness passes `input.options` (single-event mode) and `step.options` (`track` steps) through
+      to `trackSchemaFromEvent` verbatim, and omits the argument entirely when the fixture has no
+      `options` (wire-9 through wire-13, batch-7).
 - [ ] Harness does not persist state between invocations — each run constructs a fresh
       `AvoInspector` instance.
 
@@ -582,10 +599,12 @@ Suite runners SHOULD produce a conformance report with the following structure p
 ### Versioning
 
 The harness contract follows the same versioning policy as the spec (`VERSIONING.md`). The
-contract version is `1.0.0` — the initial publication, which includes the optional batch
-configuration fields (`batchSize`, `batchFlushSeconds`, `maxQueueSize`, `disableBatchTimer`) in the
-`constructor` object, and the `sequence`-mode actions (`track`, `trackN`, `flush`, `destroy`) with
-the concurrency union assertions (`expected_event_union_count`, `expected_unique_message_ids`).
+contract version is `1.1.0` — additive: the optional `options` object on single-event
+`trackSchemaFromEvent` input and on `track` steps, and the `"<absent>"` placeholder. `1.0.0` was
+the initial publication, which includes the optional batch configuration fields (`batchSize`,
+`batchFlushSeconds`, `maxQueueSize`, `disableBatchTimer`) in the `constructor` object, and the
+`sequence`-mode actions (`track`, `trackN`, `flush`, `destroy`) with the concurrency union
+assertions (`expected_event_union_count`, `expected_unique_message_ids`).
 Breaking changes to the input/output envelope schema or exit code semantics MUST increment the
 MAJOR version. Additive fields (new optional input or output fields) MUST increment the MINOR
 version.

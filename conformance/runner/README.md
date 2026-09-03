@@ -2,7 +2,7 @@
 
 A reusable, language-agnostic **suite-runner** + **mock Inspector server** for the Avo Inspector
 Server SDK conformance suite. SDK authors point this at their own harness binary and get a
-PASS/FAIL report across all 30 fixtures — no need to re-derive the ~300 LOC of runner + mock for
+PASS/FAIL report across all 36 fixtures — no need to re-derive the ~300 LOC of runner + mock for
 every language.
 
 The runner implements the normative protocol in
@@ -46,11 +46,12 @@ The runner:
    `extractSchema` output, request count, request bodies (with `<uuid-v4>` / `<iso8601>` /
    `<semver>` / `<sdk-platform>` placeholder format-validation), `expected_request_bodies` as an
    **unordered multiset**, `expected_event_union_count`, `expected_unique_message_ids`, and
-   `expected_request_headers` (including `content-encoding: null` for "no gzip").
-5. Prints a per-fixture `[PASS]` / `[FAIL]` line and a `N/30 PASS` summary. Exit code `0` only when
+   `expected_request_headers` (including `content-encoding: null` for "no gzip"), and the
+   `"<absent>"` placeholder (a key that MUST NOT be present — the omitted gateway fields).
+5. Prints a per-fixture `[PASS]` / `[FAIL]` line and a `N/36 PASS` summary. Exit code `0` only when
    every fixture passes; non-zero otherwise.
 
-A green run requires all 30 fixtures to pass. The default (no `--harness`) runs the bundled
+A green run requires all 36 fixtures to pass. The default (no `--harness`) runs the bundled
 non-normative example harness (see below).
 
 ## Files

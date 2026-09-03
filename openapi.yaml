@@ -10,7 +10,7 @@ info:
     Authorization header.
 
     See SPEC.md (Section 7) for the full normative wire-protocol specification.
-  version: "2.0.0"
+  version: "2.1.0"
   contact:
     name: Avo Support
     email: support@avo.app
@@ -88,6 +88,28 @@ paths:
                         propertyType: "string"
                       - propertyName: "trialDays"
                         propertyType: "int"
+              gatewayEvent:
+                summary: Event observed at one gateway output (SPEC.md §7.3.6)
+                value:
+                  - apiKey: "MY_GATEWAY_KEY"
+                    appName: "my-app"
+                    appVersion: "4.2.0"
+                    libVersion: "1.2.0"
+                    env: "prod"
+                    libPlatform: "ruby"
+                    messageId: "550e8400-e29b-41d4-a716-446655440001"
+                    streamId: ""
+                    sessionId: ""
+                    createdAt: "2026-09-03T12:00:00.000Z"
+                    samplingRate: 1.0
+                    type: "event"
+                    eventName: "purchase"
+                    outputReference: "meta-x7k2q"
+                    originHint: "android"
+                    eventProperties:
+                      - propertyName: "items"
+                        propertyType: "list(object)"
+                        children: []
       responses:
         "200":
           description: |
@@ -175,9 +197,12 @@ components:
           type: string
           description: Application name. Empty string if not provided.
         appVersion:
-          type: string
+          type: [string, "null"]
           minLength: 1
-          description: Application version (version constructor option).
+          description: |
+            Per-event application version. The `version` constructor option unless overridden by
+            `options.appVersion`; a literal JSON `null` ONLY when `options.originHint` is set and
+            no usable `options.appVersion` was provided (SPEC.md §7.3.6). The key is always present.
         libVersion:
           type: string
           pattern: "^\\d+\\.\\d+\\.\\d+$"
@@ -225,6 +250,22 @@ components:
           items:
             $ref: "#/components/schemas/EventPropertyPlain"
           description: Extracted schema — array of plain property objects.
+        outputReference:
+          type: string
+          minLength: 1
+          pattern: "^\\S(.*\\S)?$"
+          description: |
+            OPTIONAL gateway coordinate (SPEC.md §7.3.6): reference of the gateway output this
+            observation was bound for (e.g. `meta-x7k2q`). Absent = gateway-level checkpoint.
+            Trimmed; omitted entirely (never `null` or `""`) when empty or whitespace-only.
+        originHint:
+          type: string
+          minLength: 1
+          pattern: "^\\S(.*\\S)?$"
+          description: |
+            OPTIONAL gateway coordinate (SPEC.md §7.3.6): low-cardinality label of the source the
+            event came from (e.g. `android`). Never a user identifier. Trimmed; omitted entirely
+            (never `null` or `""`) when empty or whitespace-only.
 
     EventPropertyPlain:
       description: |

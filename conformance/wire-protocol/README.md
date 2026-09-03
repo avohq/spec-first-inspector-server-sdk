@@ -15,6 +15,11 @@ and correctly handles `streamId` edge cases.
 | `wire-6` | Large body (≥ 1024 bytes) — MUST be gzip-compressed on any gzip-capable runtime (SPEC.md §7.3.5); transparent after gunzip |
 | `wire-7` | Small body (< 1024 bytes) — MUST be sent uncompressed (no `Content-Encoding` header) |
 | `wire-8` | Batching — `env: staging` + `batchSize: 30`; one tracked event is buffered, not sent (0 HTTP calls before flush) (SPEC.md §12) |
+| `wire-9` | Gateway fields — `options.outputReference` + `originHint` + `appVersion` all set → all three on the wire as top-level siblings of `eventProperties` (SPEC.md §4.2.1, §7.3.6) |
+| `wire-10` | `originHint` set (padded, trimmed on the wire) with no `appVersion` → `appVersion` is a literal `null`; `outputReference` absent (SPEC.md §7.3.6 table row 2) |
+| `wire-11` | `outputReference` + `appVersion` set (padded, trimmed), no `originHint` → `appVersion` overrides the constructor version; `originHint` absent (SPEC.md §7.3.6 table row 3) |
+| `wire-12` | Empty / whitespace-only options → both gateway keys absent (never `null` / `""`), `appVersion` falls back to the constructor version; body identical to the no-options shape (SPEC.md §7.3.6 table row 4) |
+| `wire-13` | Property-name collision — event properties literally named `outputReference` / `originHint` / `appVersion` stay in the schema untouched while the top-level gateway fields come from `options` only (SPEC.md §7.3.6) |
 
 > **Batching coverage.** The `dev` fixtures (`wire-1`–`wire-7`, all `env: "dev"`) run with
 > `batchSize` forced to 1, so they also serve as the automated check for the immediate-send
@@ -68,8 +73,11 @@ regardless of the regex rule.
 | `"<iso8601>"` | `createdAt` | `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/` — must include a 3-digit millisecond suffix (e.g., `.000Z`); the digit values are not constrained. |
 | `"<semver>"` | `libVersion` | `/^\d+\.\d+\.\d+$/` — plain SemVer, no suffix (e.g., `"1.2.0"`, not `"1.2.0+spec"`). |
 | `"<sdk-platform>"` | `libPlatform` | Any non-empty string identifying the SDK language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). Suite runner accepts any non-empty value. |
+| `"<absent>"` | any key (`outputReference` / `originHint`) | The key MUST NOT be present on the captured event at all — not `null`, not `""`. Asserts the omission rule of SPEC.md §7.3.6; the runner otherwise tolerates extra keys, so omission needs an explicit placeholder. |
 
-All four fields are **required** on every event sent. A missing field is a conformance failure.
+The four format-validated fields are **required** on every event sent. A missing field is a
+conformance failure. `"<absent>"` is the inverse: presence is the failure. A literal `null` expected
+value (e.g. `"appVersion": null` in `wire-10`) requires a literal JSON `null` on the wire.
 
 ## Fixture Format Reference
 
@@ -87,7 +95,8 @@ All four fields are **required** on every event sent. A missing field is a confo
   "input": {
     "eventName": "string",
     "eventProperties": {},
-    "streamId": "string (optional)"
+    "streamId": "string (optional)",
+    "options": { "outputReference": "string (optional)", "originHint": "string (optional)", "appVersion": "string (optional)" }
   },
   "precondition": { "samplingRate": 1.0 },
   "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
@@ -108,7 +117,7 @@ All four fields are **required** on every event sent. A missing field is a confo
 | `description` | YES | Human-readable description. |
 | `constructor` | YES | Options passed verbatim to the SDK constructor. |
 | `operation` | YES | SDK method to invoke: `"trackSchemaFromEvent"`. |
-| `input` | YES | Operation-specific input. `streamId` is optional; when absent, `streamId` MUST be `""` in the wire body. |
+| `input` | YES | Operation-specific input. `streamId` is optional; when absent, `streamId` MUST be `""` in the wire body. `options` is optional (SPEC.md §4.2.1); when present the harness passes it verbatim as the fourth argument, when absent the harness omits the argument. |
 | `precondition` | NO | State to establish before invoking the operation. Harness MUST apply `samplingRate` override via internal setter or test hook before calling the operation. |
 | `mock_response` | NO | Response the mock server returns. `null` means no HTTP call is expected — the mock server is still started and the SDK still pointed at it, so any erroneous send is captured locally (fail-closed) and the runner asserts zero requests. |
 | `expected_request_body` | NO | Array of expected JSON request bodies. Use when one or more HTTP calls are expected. |
@@ -130,7 +139,7 @@ See [`conformance/runner-contract.md`](../runner-contract.md) for the full harne
 
 ## Conformance Definition
 
-An SDK **passes** the wire-protocol suite when all 8 fixtures pass:
+An SDK **passes** the wire-protocol suite when all 13 fixtures pass:
 
 - `wire-1`: The harness exits with code `0` and the mock server recorded exactly 1 request matching the
   expected body (with format validation applied to placeholder fields).
@@ -148,3 +157,15 @@ An SDK **passes** the wire-protocol suite when all 8 fixtures pass:
 - `wire-8`: The harness exits with code `0`, the promise resolves, and the mock server recorded **0**
   requests — with `env: "staging"` and `batchSize: 30`, a single tracked event is buffered (below the
   size threshold) and MUST NOT be sent before a flush (SPEC.md §12.3).
+- `wire-9`: exactly 1 request whose event carries `outputReference: "meta-x7k2q"`, `originHint: "android"`
+  and `appVersion: "4.2.0"` (the per-event override, not the constructor's `"1.0.0"`) as top-level keys,
+  with `eventProperties` unchanged.
+- `wire-10`: exactly 1 request with `originHint: "android"` (input was `"  android  "`), a literal
+  `appVersion: null`, and **no** `outputReference` key.
+- `wire-11`: exactly 1 request with `outputReference: "meta-x7k2q"` and `appVersion: "4.2.0"` (both
+  trimmed), and **no** `originHint` key.
+- `wire-12`: exactly 1 request with **neither** gateway key present and `appVersion: "1.0.0"` (constructor
+  fallback) — whitespace-only / empty option values are treated as absent and never serialized.
+- `wire-13`: exactly 1 request whose `eventProperties` still contains the four properties (`outputReference`
+  string, `originHint` int, `appVersion` boolean, `plan` string) while the top-level `outputReference` /
+  `originHint` come from `options` and `appVersion` is `null` (originHint set, no override).

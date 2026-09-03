@@ -1,6 +1,6 @@
 # SPEC.md — Avo Inspector Server SDK Specification
 
-**Version:** 2.0.0
+**Version:** 2.1.0
 **Status:** Normative
 **Repository:** `avohq/spec-first-inspector-server-sdk`
 
@@ -157,8 +157,15 @@ strings (MUST throw with the error above).
 trackSchemaFromEvent(
   eventName: string,
   eventProperties: { [propName: string]: any },
-  streamId?: string
+  streamId?: string,
+  options?: TrackOptions            // OPTIONAL gateway coordinates, see 4.2.1 and Section 7.3.6
 ): Promise<Array<{ propertyName: string; propertyType: string; children?: any }>>
+
+interface TrackOptions {
+  outputReference?: string;  // which gateway output the payload was bound for; absent = gateway checkpoint
+  originHint?: string;       // low-cardinality label of the source the event came from
+  appVersion?: string;       // per-event app version override (see the rule in Section 7.3.6)
+}
 ```
 
 **Semantics (in order of execution):**
@@ -191,6 +198,33 @@ trackSchemaFromEvent(
 - If `streamId` contains `:`, the SDK MUST emit a console warning and MUST still use the value
   unchanged as `streamId` in the wire body.
 - If `streamId` is absent or empty, the `streamId` field in the wire body MUST be `""`.
+
+#### 4.2.1 `options` — Gateway Track Options
+
+`options` is an OPTIONAL trailing parameter (a plain object / record / options class, language-
+idiomatic) that lets an SDK be used with a **gateway-scoped** Inspector API key. Avo's multi-gate
+model issues one Inspector API key per *gateway* (e.g. one tag-manager container or one backend
+event router that fans events out to several destinations) instead of one Inspector source per
+destination, and labels each observation with two coordinates:
+
+| Option | Type | Semantics |
+|---|---|---|
+| `outputReference` | string | Reference of the gateway **output** (destination checkpoint) this observation was bound for, as shown in Avo (e.g. `"meta-x7k2q"`). Absent = the observation was taken at the **gateway** checkpoint (after gateway-level transformations, before any output's). Present = that output's checkpoint (after that output's transformations). |
+| `originHint` | string | Low-cardinality label identifying which **source** the event came from (e.g. `"web"`, `"ios"`, `"android"`); the value is mapped to an Avo source in the Avo UI. It **MUST NOT** be a user identifier or any other high-cardinality value. This is a documentation rule for SDK README/API docs; SDKs do not validate it at runtime. |
+| `appVersion` | string | App version of the source that produced **this event**, overriding the instance's `version` per the rule in Section 7.3.6. |
+
+**API requirements:**
+
+- Adding `options` MUST NOT break existing call sites: it is trailing and optional (in a language
+  without optional parameters, keep the existing three-parameter signature and add a four-parameter
+  overload that the three-parameter one delegates to). A call without `options`, or with an empty
+  options object, MUST produce a wire body identical to the pre-2.1.0 body.
+- `options` is read **per call**: each call's values apply only to the event enqueued by that call.
+  Two calls for the same event with different `outputReference` values are two distinct
+  observations and MUST both be sent (there is no deduplication in server SDKs; gated by the
+  `batch-7` fixture).
+- Value normalization and the wire mapping are normative in Section 7.3.6.
+- `options` MUST NOT affect `extractSchema`, sampling, batching, or `streamId` handling.
 
 **Network errors and timeouts:** Network failures are swallowed inside the internal send handler.
 `trackSchemaFromEvent` MUST resolve with the extracted event schema even when the HTTP call
@@ -395,6 +429,17 @@ calls to that URL instead of `https://api.avo.app`. This is used by the conforma
 > `apiKey`. Because all conformance fixtures construct the SDK with `env: "dev"` or `"staging"`,
 > gating on `env` keeps every fixture runnable while production stays locked down.
 
+> **Backend compatibility note for the gateway fields (informative, as of 2026-09-03).** The
+> `/inspector/v1/track` ingestion path currently uses a fast parser that does **not** decode
+> `outputReference` / `originHint` (it discards them) and that **drops** any event whose
+> `appVersion` is `null` (the request still returns `200`). The other ingestion paths
+> (`/inspector/gtm/v1/track`, `/inspector/v2/track`) decode both fields and tolerate
+> `appVersion: null`. Until the v1 parser is updated, a gateway-scoped integration on v1 SHOULD
+> pair `originHint` with a non-blank `options.appVersion`, and an SDK SHOULD emit a one-time
+> warning when `originHint` is set without a usable `appVersion` (Section 7.3.6). The wire
+> contract in this spec is unchanged by the backend gap; this note will be removed when the gap
+> closes.
+
 ### 7.2 Request Headers
 
 | Header | Value |
@@ -424,8 +469,10 @@ Each event object in the array MUST be fully self-contained: it MUST carry its o
 different `streamId` values, different `eventName`s, and different `createdAt`
 timestamps; implementations MUST NOT hoist, share, or deduplicate per-event fields across batch
 elements, and MUST NOT assume all events in a batch belong to the same stream. The instance-level
-fields (`apiKey`, `appName`, `appVersion`, `libVersion`, `env`, and `libPlatform`) are identical
-across a batch but are repeated on every element; the wire format has no shared header object.
+fields (`apiKey`, `appName`, `libVersion`, `env`, and `libPlatform`) are identical across a batch
+but are repeated on every element; the wire format has no shared header object. `appVersion` is
+instance-level unless overridden per event via `options` (Section 7.3.6), and the OPTIONAL gateway
+fields `outputReference` / `originHint` are likewise per event.
 
 ```json
 [
@@ -456,7 +503,7 @@ These fields MUST be present on every event object:
 |---|---|---|
 | `apiKey` | string | The Inspector API key passed to the constructor. |
 | `appName` | string | `appName` constructor option (empty string `""` if not provided). |
-| `appVersion` | string | `version` constructor option. |
+| `appVersion` | string \| null | The `version` constructor option, unless overridden per event by `options.appVersion`. A literal JSON `null` ONLY when `options.originHint` is set and no usable `options.appVersion` was provided (rule in Section 7.3.6). The key is always present. |
 | `libVersion` | string | SDK library version. MUST be a plain SemVer string (e.g., `"1.2.0"`). No suffix. See Section 7.3.3 for canonical version file guidance. |
 | `env` | string | One of `"dev"`, `"staging"`, `"prod"` (exact wire values from `AvoInspectorEnv`). |
 | `libPlatform` | string | Identifies the SDK platform/language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). MUST be a non-empty string. |
@@ -590,6 +637,82 @@ Compression MUST NOT change the logical request: the bytes the server obtains af
 byte-identical to the JSON body that would have been sent uncompressed. Compression MUST NOT alter
 any other observable behavior — the 10-second timeout, error taxonomy (Section 7.5), and promise
 outcomes are identical for compressed and uncompressed requests.
+
+#### 7.3.6 Gateway Coordinate Fields (`outputReference`, `originHint`) and Per-Event `appVersion`
+
+These OPTIONAL fields carry the gateway coordinates from `options` (Section 4.2.1). They are
+**top-level siblings of `eventProperties`** on the event object — never nested inside the schema.
+An event property that happens to be named `outputReference`, `originHint`, or `appVersion` is an
+ordinary property: it stays in `eventProperties` untouched and does not populate these fields.
+
+| Field | Type | Presence | Description |
+|---|---|---|---|
+| `outputReference` | string | OPTIONAL | Normalized `options.outputReference`. Absent = gateway checkpoint. |
+| `originHint` | string | OPTIONAL | Normalized `options.originHint`. |
+
+**Normalization (MUST, applied to each of the three option values independently):**
+
+1. A string value is trimmed (leading/trailing whitespace removed).
+2. A value that is absent, `null`, empty, or whitespace-only after trimming is **absent**.
+3. In dynamically-typed languages, a non-string value (number, boolean, object, array) is
+   **absent** — SDKs MUST NOT stringify it. (The Inspector backend decodes these fields as optional
+   strings and silently discards any other JSON type. A caller whose inputs are untyped — a
+   tag-manager template, a config file — is expected to stringify numbers and booleans itself
+   *before* calling the SDK; the SDK accepts strings only.) Statically-typed languages enforce this
+   at compile time.
+4. No length cap is imposed by the SDK.
+
+**Wire mapping (MUST):**
+
+- `outputReference` and `originHint`: when the normalized value is present, send it as a string;
+  when absent, **omit the key entirely** — never send `null` or `""`.
+- `appVersion` (always present as a key) is resolved per event:
+
+  | `originHint` (normalized) | `options.appVersion` (normalized) | wire `appVersion` |
+  |---|---|---|
+  | present | present | `options.appVersion` |
+  | present | absent | `null` — the instance's configured version never applies to a source-scoped event |
+  | absent | present | `options.appVersion` |
+  | absent | absent | the instance's `version` (unchanged pre-2.1.0 behavior) |
+
+  Rationale: an event carrying `originHint` came from a *different* source than the app this SDK
+  instance was configured for, so the instance-level version would be wrong; sending `null` is
+  preferable to a misleading version.
+
+- When `originHint` is present and the resolved `appVersion` is `null`, the SDK SHOULD log a
+  one-time (per process) warning that the event's `appVersion` will be sent as `null` — the current
+  v1 ingestion path drops such events (Section 7.1 backend note). The warning MUST NOT include the
+  option values themselves.
+- Session-started or any other non-`event` body types (not part of this spec) are unaffected.
+
+**Example** — `trackSchemaFromEvent("purchase", { items: [] }, "", { outputReference: "meta-x7k2q", originHint: "android" })`
+on an instance constructed with `version: "1.0.0"`:
+
+```json
+[
+  {
+    "apiKey": "<gateway key>",
+    "appName": "my-app",
+    "appVersion": null,
+    "libVersion": "1.2.0",
+    "env": "prod",
+    "libPlatform": "ruby",
+    "messageId": "550e8400-e29b-41d4-a716-446655440001",
+    "streamId": "",
+    "sessionId": "",
+    "createdAt": "2026-09-03T12:00:00.000Z",
+    "samplingRate": 1.0,
+    "type": "event",
+    "eventName": "purchase",
+    "outputReference": "meta-x7k2q",
+    "originHint": "android",
+    "eventProperties": [ { "propertyName": "items", "propertyType": "list(string)", "children": [] } ]
+  }
+]
+```
+
+Conformance: `wire-9` – `wire-13` (presence, omission, trimming, the four-cell `appVersion` table,
+and the property-name collision) and `batch-7` (per-event options inside one batch).
 
 ### 7.4 Response
 
@@ -1306,9 +1429,11 @@ OUTSIDE the lock. The buffer is shared mutable state and MUST be synchronized pe
 ### 12.7 Wire Shape
 
 A flushed batch is a JSON array of one or more self-contained event objects (Section 7.3); a batch
-MAY mix `streamId`/`eventName`/`createdAt` across elements. `Content-Type` remains
-`application/json` (Section 7.2). gzip applies to the assembled batch body per the 1024-byte rule
-(Section 7.3.5).
+MAY mix `streamId`/`eventName`/`createdAt` across elements, and MAY mix elements with and without
+the gateway fields (`outputReference`/`originHint`) or with different per-event `appVersion`
+values (Section 7.3.6) — `options` are resolved per event at enqueue and travel with that element.
+`Content-Type` remains `application/json` (Section 7.2). gzip applies to the assembled batch body
+per the 1024-byte rule (Section 7.3.5).
 
 ### 12.8 Promise and Sampling Semantics
 
@@ -1350,10 +1475,11 @@ MUST validate these fields by format:
 | `createdAt` | ISO 8601 UTC with milliseconds | `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/` |
 | `libVersion` | Plain SemVer string | `/^\d+\.\d+\.\d+$/` |
 | `libPlatform` | Non-empty string | Any non-empty string; suite runner accepts any |
+| *(any key)* | `"<absent>"` placeholder | The key MUST NOT be present in the captured event object at all (used to assert omitted gateway fields, Section 7.3.6) |
 
 When a fixture's `expected_request_body` contains a placeholder value (e.g., `"<uuid-v4>"`,
-`"<iso8601>"`, `"<semver>"`, `"<sdk-platform>"`), the suite runner MUST validate that field
-using the corresponding regex rather than comparing to the placeholder string exactly.
+`"<iso8601>"`, `"<semver>"`, `"<sdk-platform>"`, `"<absent>"`), the suite runner MUST validate that
+field using the corresponding rule rather than comparing to the placeholder string exactly.
 
 ### Environment Variable
 
@@ -1382,5 +1508,7 @@ manifest metadata, or a `SPEC_VERSION` constant).
 
 ---
 
-*Spec version: 2.0.0 — `sessionId` is now a required wire field (empty string for server SDKs).*
-*Last updated: 2026-06-24.*
+*Spec version: 2.1.0 — adds the OPTIONAL gateway coordinates `outputReference` / `originHint` and
+the per-event `appVersion` override (`options`, Sections 4.2.1 and 7.3.6); 2.0.0 made `sessionId` a
+required wire field (empty string for server SDKs).*
+*Last updated: 2026-09-03.*

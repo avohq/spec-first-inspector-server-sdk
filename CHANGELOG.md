@@ -22,6 +22,63 @@ spec version declaration patterns.
 
 ---
 
+## [2.1.0] - 2026-09-03 `[WIRE]`
+
+**Adds the OPTIONAL gateway coordinates `outputReference` / `originHint` and a per-event `appVersion`
+override, via a new trailing `options` parameter on `trackSchemaFromEvent`.** This is the server-SDK
+half of Avo's multi-gate model: one Inspector API key per *gateway* instead of one source per
+destination, with each observation labeled by which gateway output it was bound for
+(`outputReference`; absent = gateway checkpoint) and which source it came from (`originHint`;
+low-cardinality, never a user identifier). The Inspector ingestion API already accepts both fields
+as optional strings; this release specifies how a server SDK produces them.
+
+Per [`VERSIONING.md`](./VERSIONING.md) this is an additive wire-protocol change (new OPTIONAL request
+fields; a call without `options` is unchanged), so it is a **MINOR** release. **Downstream SDKs SHOULD
+regenerate** to gain gateway support; an SDK generated from 2.0.0 remains conformant for non-gateway
+use.
+
+### Wire contract (normative summary — SPEC.md §4.2.1, §7.3.6)
+
+- `trackSchemaFromEvent(eventName, eventProperties, streamId?, options?)` with
+  `options = { outputReference?: string; originHint?: string; appVersion?: string }` (trailing and
+  optional, or an overload in languages without optional parameters).
+- `outputReference` / `originHint` are top-level siblings of `eventProperties`, never inside the
+  schema. Each value is trimmed; absent / `null` / empty / whitespace-only (and, in dynamically-typed
+  languages, non-string) values are treated as absent and the key is **omitted** — never sent as
+  `null` or `""`.
+- `appVersion` (always present) follows a four-cell rule: `options.appVersion` when provided; a
+  literal JSON `null` when `originHint` is set and no usable `options.appVersion` was given (the
+  event is source-scoped, so the instance's configured version never applies); otherwise the
+  constructor `version`. SDKs SHOULD warn once per process when it resolves to `null`.
+- `options` are per call; two calls for the same event with different `outputReference` values are
+  two observations and are both sent (no deduplication).
+
+### Backend compatibility note (informative)
+
+As of 2026-09-03 the `/inspector/v1/track` ingestion path does **not** decode the two fields and
+**drops** events whose `appVersion` is `null` (still HTTP 200); the other ingestion paths decode both
+and tolerate `null`. Until the v1 parser is updated, pair `originHint` with a non-blank
+`options.appVersion`. The spec's wire contract is unchanged by this; SPEC.md §7.1 carries the dated
+note.
+
+### Changed
+
+| Artifact | Change |
+|---|---|
+| `SPEC.md` §4.2 / new §4.2.1 | `options?: TrackOptions` on `trackSchemaFromEvent`; option semantics, API requirements. |
+| `SPEC.md` §7.1 | Dated backend-compatibility note for the gateway fields. |
+| `SPEC.md` §7.3 / §7.3.1 | `appVersion` is now `string \| null` under the §7.3.6 rule; instance-level field list no longer lists `appVersion` unconditionally. |
+| `SPEC.md` new §7.3.6 | Normative wire mapping: presence/omission, normalization, the four-cell `appVersion` table, one-time warning, example body. |
+| `SPEC.md` §12.7 | A batch MAY mix elements with/without gateway fields and with different per-event `appVersion`. |
+| `SPEC.md` Conformance Harness Reference | `"<absent>"` placeholder. |
+| `openapi.yaml`, `schemas/event-body.json` | `appVersion` nullable; OPTIONAL `outputReference` / `originHint` (`minLength: 1`, no surrounding whitespace); new `gatewayEvent` example. |
+| `conformance/runner-contract.md` (1.1.0) | `input.options` and `steps[].options` passed verbatim; `"<absent>"` placeholder; checklist item. |
+| `conformance/wire-protocol/fixtures.json` | `wire-9` – `wire-13`: all-set, `originHint` without `appVersion` → `null`, override without `originHint`, whitespace-only → omitted + fallback, property-name collision. |
+| `conformance/batching/fixtures.json` | `batch-7`: per-event `options` inside one batch, no deduplication. |
+| `conformance/runner/suite-runner.mjs` | `"<absent>"` key-must-not-exist assertion in `matchBody`. |
+| `conformance/runner/example-harness/{sdk,harness}.mjs` | Reference SDK implements §4.2.1 / §7.3.6; harness forwards `options`. **Also fixes a 2.0.0 regression:** the example SDK never sent `sessionId: ""`, so 10 of the 30 fixtures failed on `main` (`npm run conformance:run` was red); it is green again at 36/36. |
+| `conformance/runner/coverage-map.json`, `conformance/**/README.md`, `AGENTS.md` | Fixture counts (36 total), new automated/manual entries, checklist items, AC-26 / AC-27 (27 ACs). |
+
 ## [2.0.0] - 2026-06-25 `[WIRE]`
 
 **`sessionId` is now REQUIRED on the wire (empty string `""` for server SDKs); it was previously

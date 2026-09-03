@@ -19,13 +19,16 @@ mock server and `AVO_INSPECTOR_MOCK_ENDPOINT`.
 | `batch-4` | **`maxQueueSize` FIFO overflow.** `maxQueueSize: 2`; appending a 3rd event drops the oldest; the flushed batch is `[E2, E3]`. |
 | `batch-5` | **Non-200 is not re-queued.** `batchSize: 2` with per-call `mock_responses` `[500, 200]`; the failed first batch is NOT resent in the second call. |
 | `batch-6` | **Concurrency: atomic swap-and-clear.** `trackN` fires 200 concurrent tracks then `flush()`; the captured union MUST be exactly 200 events with unique `messageId`s (no lost / duplicated / torn events). |
+| `batch-7` | **Per-event gateway options.** Three `track` steps for the *same* event name and schema — `outputReference: "meta-x7k2q"`, `outputReference: "ga4-z9k1p"`, and no `options` — then `flush()`; one batch of exactly 3 events, each carrying its own `outputReference` (or none), identical `eventProperties`, and no deduplication (SPEC.md §4.2.1, §7.3.6, §12.7). |
 
 ## How it works
 
 1. The suite runner starts a local mock HTTP server and sets `AVO_INSPECTOR_MOCK_ENDPOINT`.
 2. It pipes the fixture (with `operation: "sequence"`) to the harness. The harness constructs one
    instance and runs each `steps` entry in order — `track` / `flush` / `destroy` — awaiting each
-   `track` and `flush`, and performing **no implicit flush** of its own.
+   `track` and `flush`, and performing **no implicit flush** of its own. A `track` step MAY carry an
+   `options` object (gateway coordinates, SPEC.md §4.2.1) that the harness passes verbatim for that
+   call only.
 3. After the harness exits, the runner queries `GET /requests` and asserts `expected_request_count`
    and `expected_request_bodies` (each batch is one captured POST body; placeholder fields such as
    `<uuid-v4>` / `<iso8601>` / `<semver>` / `<sdk-platform>` are format-validated).
@@ -36,7 +39,7 @@ so the harness awaits all in-flight sends before exiting.
 
 ## Conformance Definition
 
-An SDK **passes** the batching suite when all six fixtures pass: the captured request count and the
+An SDK **passes** the batching suite when all seven fixtures pass: the captured request count and the
 ordered batch bodies match each fixture's expectations (with format validation applied to placeholder
 fields), and the `batch-6` concurrency union assertions hold (exactly K events, unique `messageId`s).
 

@@ -9,9 +9,10 @@
 //   2. starts/reuses an in-process mock server and exports AVO_INSPECTOR_MOCK_ENDPOINT,
 //   3. configures the mock from mock_response / mock_responses,
 //   4. spawns the harness, writes one input JSON line to stdin, reads one output line,
-//   5. asserts outcome / value (with placeholder-regex format validation),
-//      request count, request bodies (unordered multiset), union count, unique
-//      messageIds, headers, and mock_response:null => zero requests.
+//   5. asserts outcome / value (with placeholder-regex format validation and the
+//      "<absent>" key-must-not-exist placeholder), request count, request bodies
+//      (unordered multiset), union count, unique messageIds, headers, and
+//      mock_response:null => zero requests.
 //
 // Prints a per-fixture PASS/FAIL line and a summary; exits non-zero if any fail.
 //
@@ -42,6 +43,10 @@ const PLACEHOLDERS = {
   "<semver>": (v) => typeof v === "string" && /^\d+\.\d+\.\d+$/.test(v),
   "<sdk-platform>": (v) => typeof v === "string" && v.length > 0,
 };
+// Presence placeholder (runner-contract "Format validation"): the expected key
+// MUST NOT exist on the captured event. Handled in matchBody, not via PLACEHOLDERS,
+// because its rule is about the key, not the value.
+const ABSENT_PLACEHOLDER = "<absent>";
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -166,9 +171,16 @@ function matchBody(expected, actual) {
   // Every expected key must be present and match. Extra actual keys are tolerated
   // (the Inspector backend ignores unknown fields; schemas/event-body.json permits
   // them). messageId/createdAt/libVersion/libPlatform use placeholder validators.
+  // The "<absent>" placeholder is the one way to assert a key is NOT present —
+  // used for the omitted gateway fields (SPEC §7.3.6): present-with-null or
+  // present-with-"" is a failure, not a tolerated extra.
   for (const key of Object.keys(expected)) {
     const exp = expected[key];
     const act = actual[key];
+    if (exp === ABSENT_PLACEHOLDER) {
+      if (Object.prototype.hasOwnProperty.call(actual, key)) return false;
+      continue;
+    }
     if (typeof exp === "string" && PLACEHOLDERS[exp]) {
       if (!PLACEHOLDERS[exp](act)) return false;
     } else if (!deepEqual(exp, act)) {

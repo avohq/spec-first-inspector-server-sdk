@@ -31,9 +31,9 @@
       "description": "Application name. Empty string if not provided."
     },
     "appVersion": {
-      "type": "string",
+      "type": ["string", "null"],
       "minLength": 1,
-      "description": "Application version (version constructor option)."
+      "description": "Per-event application version. The version constructor option unless overridden by options.appVersion; a literal JSON null ONLY when options.originHint is set and no usable options.appVersion was provided (SPEC.md §7.3.6). The key is always present."
     },
     "libVersion": {
       "type": "string",
@@ -90,9 +90,21 @@
         "$ref": "event-property-plain.json"
       },
       "description": "Extracted schema — array of plain property objects."
+    },
+    "outputReference": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S(.*\\S)?$",
+      "description": "OPTIONAL gateway coordinate: reference of the gateway output this observation was bound for (e.g. meta-x7k2q). Absent = gateway-level checkpoint. Trimmed; MUST be omitted (never null or \"\") when empty or whitespace-only. SPEC.md §7.3.6."
+    },
+    "originHint": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^\\S(.*\\S)?$",
+      "description": "OPTIONAL gateway coordinate: low-cardinality label of the source the event came from (e.g. android). Never a user identifier. Trimmed; MUST be omitted (never null or \"\") when empty or whitespace-only. SPEC.md §7.3.6."
     }
   },
-  "$comment": "Unknown extra fields are permitted — the Inspector backend ignores fields it does not read (write-api consumes only named keys). sessionId is REQUIRED and MUST be the empty string for server SDKs (the ingestion pipeline drops events that omit it). trackingId, visitorId, and userId are forbidden (SPEC.md §3.3, §7.3.1). This matches openapi.yaml EventBody.",
+  "$comment": "Unknown extra fields are permitted — the Inspector backend ignores fields it does not read (write-api consumes only named keys). sessionId is REQUIRED and MUST be the empty string for server SDKs (the ingestion pipeline drops events that omit it). trackingId, visitorId, and userId are forbidden (SPEC.md §3.3, §7.3.1). outputReference and originHint are OPTIONAL gateway coordinates that are present only when the caller supplied a non-blank value via options (SPEC.md §7.3.6); appVersion is nullable only under the originHint rule in §7.3.6. This matches openapi.yaml EventBody.",
   "not": {
     "anyOf": [
       { "required": ["trackingId"] },
