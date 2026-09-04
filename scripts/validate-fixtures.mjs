@@ -137,6 +137,17 @@ for (const f of schemaExtraction) {
   });
 }
 
+// eventProperties is OPTIONAL on a fixture body — an event with no properties
+// omits it — so absence is skipped, not failed. A PRESENT but non-array value is
+// already reported by checkBody() against the EventBody schema; iterating it would
+// throw a TypeError and abort the run before the summary printed, losing every
+// later fixture. Returning [] lets validation continue while the exit status still
+// reflects the failure checkBody recorded.
+const propertiesOf = (body) => {
+  const props = body?.eventProperties;
+  return Array.isArray(props) ? props : [];
+};
+
 // wire-protocol + error-handling: every event object is an EventBody, and every
 // eventProperties[] element is an EventPropertyPlain. The body check is what
 // guards the required-field list — without it a fixture that drops or mistypes a
@@ -157,7 +168,7 @@ for (const rel of [
     if (!expectedBody) continue;
     expectedBody.forEach((body, b) => {
       checkBody(suite, f.fixture_id, body, `expected_request_body[${b}]`);
-      (body?.eventProperties ?? []).forEach((prop, i) => {
+      propertiesOf(body).forEach((prop, i) => {
         if (!validateProp(prop)) {
           fail(suite, f.fixture_id, `expected_request_body[${b}].eventProperties[${i}]`, validateProp);
         }
@@ -188,7 +199,7 @@ for (const f of batching) {
     if (!events) return;
     events.forEach((body, e) => {
       checkBody("batching", f.fixture_id, body, `expected_request_bodies[${b}][${e}]`);
-      (body?.eventProperties ?? []).forEach((prop, i) => {
+      propertiesOf(body).forEach((prop, i) => {
         if (!validateProp(prop)) {
           fail("batching", f.fixture_id, `expected_request_bodies[${b}][${e}].eventProperties[${i}]`, validateProp);
         }
