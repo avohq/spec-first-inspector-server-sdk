@@ -272,19 +272,29 @@ components:
         outputReference:
           type: string
           minLength: 1
-          pattern: "^\\S(.*\\S)?$"
+          pattern: "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
           description: |
             OPTIONAL gateway coordinate (SPEC.md §7.3.6): reference of the gateway output this
             observation was bound for (e.g. `meta-x7k2q`). Absent = gateway-level checkpoint.
             Trimmed; omitted entirely (never `null` or `""`) when empty or whitespace-only.
+            The pattern mirrors the §7.3.6 trim-only rule exactly: leading and trailing
+            whitespace are rejected because normalization removes them, while internal
+            whitespace — line breaks included — is preserved and therefore accepted. Do not
+            simplify it to `^\S(.*\S)?$`, which rejects a value containing a newline that a
+            conformant SDK would send unchanged.
         originHint:
           type: string
           minLength: 1
-          pattern: "^\\S(.*\\S)?$"
+          pattern: "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
           description: |
             OPTIONAL gateway coordinate (SPEC.md §7.3.6): low-cardinality label of the source the
             event came from (e.g. `android`). Never a user identifier. Trimmed; omitted entirely
             (never `null` or `""`) when empty or whitespace-only.
+            The pattern mirrors the §7.3.6 trim-only rule exactly: leading and trailing
+            whitespace are rejected because normalization removes them, while internal
+            whitespace — line breaks included — is preserved and therefore accepted. Do not
+            simplify it to `^\S(.*\S)?$`, which rejects a value containing a newline that a
+            conformant SDK would send unchanged.
 
     EventPropertyPlain:
       description: |

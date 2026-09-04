@@ -46,11 +46,14 @@ fields), and the `batch-6` concurrency union assertions hold (exactly K events, 
 ## Still verified manually
 
 Concurrent enqueue + flush (atomic swap-and-clear) is now **automated** by `batch-6` via the `trackN`
-fan-out (SPEC.md §3.1 and §12.4 are MUSTs). The following two **SHOULD-level** behaviors remain in the
-manual matrix in [`../README.md`](../README.md) — they are intentionally not automated because they
-are non-normative (SHOULD) and would require test-only hooks beyond the wire protocol:
+fan-out (SPEC.md §3.1 and §12.4 are MUSTs). The following two behaviors remain in the manual matrix
+in [`../README.md`](../README.md) — they are intentionally not automated because verifying them
+requires test-only hooks beyond the wire protocol:
 
 - **Time / idle flush** (`batchFlushSeconds`, SPEC.md §12.3 — SHOULD) — needs a controllable clock /
   test-only time hook.
-- **Transient (network/timeout) re-queue at the front** (SPEC.md §12.5 — SHOULD) — needs the mock to
-  simulate a dropped connection or timeout rather than an HTTP status.
+- **Transient (network/timeout) send failure** (SPEC.md §12.5 — MUST NOT re-queue) — the batch is
+  dropped after logging and MUST NOT be re-queued or retried; the backend does not deduplicate on
+  `messageId`, so a retry would double-count events (at-most-once delivery, §3.2 and §12.6).
+  Verifying it needs the mock to simulate a dropped connection or timeout rather than an HTTP
+  status; the non-200 half of the same rule is automated by `batch-5`.
