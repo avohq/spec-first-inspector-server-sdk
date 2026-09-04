@@ -176,11 +176,13 @@ stop carrying it.
 > by v2 decodes it as a required field, which throws and discards the event when it is absent.
 > Both answer `200`. **A sender that drops `sessionId` before ingestion accepts its absence loses
 > every event, silently** — the exact failure that made the field required in the first place. The
-> ingestion change that defaults it is in flight and lands first. Until it does, a sender already
-> running in production should keep sending `sessionId: ""`: this release deliberately does **not**
-> add the field to the forbidden list, so a body that still carries it validates as an unknown
-> extra field and passes conformance. SPEC.md §7.1 carries the same warning as a dated note, to be
-> removed when the ingestion change ships.
+> ingestion change that defaults it is in flight and **MUST** ship first. Confirming that it has is
+> a release gate: it belongs to whoever owns the backend change, and nothing in this repository can
+> verify it. Until it is confirmed, a sender already running in production should keep sending
+> `sessionId: ""`. This release deliberately does **not** add the field to the forbidden list, so a
+> body that still carries it validates as an unknown extra field and passes conformance — that
+> tolerance is what makes the spec safe to land ahead of the backend. SPEC.md §7.1 carries the same
+> warning as a dated note, to be removed when the ingestion change ships.
 
 ### Changed
 
