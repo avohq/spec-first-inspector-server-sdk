@@ -45,8 +45,12 @@ Node.js ES module (`.mjs`). Depends on `ajv` (draft 2020-12 build, imported from
   it in the `[FAIL]` format and sets the exit status, rather than defaulting to `[]` and certifying a
   malformed fixture with zero checks. This applies to each inner batch of `expected_request_bodies`
   as well as to the outer array.
-- Only `eventProperties` is coerced with `?? []`, since an event with no properties legitimately omits
-  it.
+- `eventProperties` is the one container that is never itself a reported error here. It is optional,
+  since an event with no properties legitimately omits it, so `propertiesOf()` returns `[]` for
+  anything that is not an array — checked with `Array.isArray()`, not `?? []`, which would still let
+  `{}`, a string or a number reach `.forEach()` and throw. A present-but-non-array value is not
+  ignored: `checkBody()` has already reported it against the `EventBody` schema, so the guard only
+  prevents the crash rather than offering a second opinion on validity.
 
 ## Non-functional requirements
 
