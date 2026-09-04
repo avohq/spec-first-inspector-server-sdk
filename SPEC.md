@@ -856,14 +856,17 @@ buffered events (see §3.2, §12.6) and performs no retry.
 - The `samplingRate` value written into an event's wire body is the snapshot in effect **at the
   event's enqueue time** (the value that governed that event's sampling decision), not the value at
   flush time.
-- The sampling rate is updated from the response body of any successful 200 response.
+- The sampling rate is updated from the body of a `200` response **when that body carries a numeric
+  `samplingRate` in `[0.0, 1.0]`**. A `200` whose body has no `samplingRate` — including the
+  event-limit drop shape `{"success": false}` — leaves the current value unchanged (Section 7.4).
+  Non-`200` responses never update it.
 - In multi-threaded runtimes, `samplingRate` MUST be updated using a lock or atomic primitive.
   Last-write-wins is acceptable.
 - **`/inspector/v2/track` does not sample server-side.** That ingestion path pins the
   `samplingRate` it returns to `1.0`, and the counts it stores are exact rather than extrapolated
   from a sampled fraction. This changes none of the SDK obligations above: an SDK still reads
-  `samplingRate` from every `200` response, still evaluates the per-event check at enqueue, and
-  still honors whatever value it is given. It only means the value an SDK receives from the server
+  `samplingRate` from a `200` that carries one, still leaves the rate unchanged on a `200` that does
+  not, still evaluates the per-event check at enqueue, and still honors whatever value it is given. It only means the value an SDK receives from the server
   is `1.0`, so server-driven sampling no longer reduces what the SDK sends.
 
 ---

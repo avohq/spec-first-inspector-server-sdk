@@ -78,8 +78,10 @@ posts to the old path and sends none of the three headers, so it is no longer co
   dropping the event.
 - **It does not sample server-side.** The `samplingRate` it returns is pinned to `1.0` and stored
   counts are exact rather than extrapolated. No SDK obligation changes: an SDK still reads
-  `samplingRate` from every `200`, still evaluates sampling per event at enqueue, and still honors
-  whatever value it is given (SPEC.md §7.7).
+  `samplingRate` from a `200` that carries a numeric value in `[0.0, 1.0]`, still leaves the rate
+  unchanged on a `200` that carries none (the event-limit drop shape `{"success": false}` is one),
+  still evaluates sampling per event at enqueue, and still honors whatever value it is given
+  (SPEC.md §7.4, §7.7).
 - **Response shapes:** `200 {"samplingRate":1.0,"success":true}` on success; `200 {"success":false}`
   when the workspace event limit dropped the event (not a transport failure, never retried);
   `400 {"ok":false,"error":"..."}` for a bad `api-key` / `env` header.
