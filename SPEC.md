@@ -429,6 +429,8 @@ calls to that URL instead of `https://api.avo.app`. This is used by the conforma
 > `apiKey`. Because all conformance fixtures construct the SDK with `env: "dev"` or `"staging"`,
 > gating on `env` keeps every fixture runnable while production stays locked down.
 
+<!-- Separates the two callouts: without it the blank line reads as one blockquote (MD028). -->
+
 > **Backend compatibility note for the gateway fields (informative, as of 2026-09-03).** The
 > `/inspector/v1/track` ingestion path currently uses a fast parser that does **not** decode
 > `outputReference` / `originHint` (it discards them) and that **drops** any event whose
@@ -685,7 +687,8 @@ ordinary property: it stays in `eventProperties` untouched and does not populate
   option values themselves.
 - Session-started or any other non-`event` body types (not part of this spec) are unaffected.
 
-**Example** — `trackSchemaFromEvent("purchase", { items: [] }, "", { outputReference: "meta-x7k2q", originHint: "android" })`
+**Example** — a call of
+`trackSchemaFromEvent("purchase", { items: [] }, "", { outputReference: "meta-x7k2q", originHint: "android" })`
 on an instance constructed with `version: "1.0.0"`:
 
 ```json

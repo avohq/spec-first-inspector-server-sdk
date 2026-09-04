@@ -79,6 +79,19 @@ note.
 | `conformance/runner/example-harness/{sdk,harness}.mjs` | Reference SDK implements §4.2.1 / §7.3.6; harness forwards `options`. **Also fixes a 2.0.0 regression:** the example SDK never sent `sessionId: ""`, so 10 of the 30 fixtures failed on `main` (`npm run conformance:run` was red); it is green again at 36/36. |
 | `conformance/runner/coverage-map.json`, `conformance/**/README.md`, `AGENTS.md` | Fixture counts (36 total), new automated/manual entries, checklist items, AC-26 / AC-27 (27 ACs). |
 
+### Fixed
+
+Pre-existing artifact defects found while reviewing this release. None of them changes the 2.1.0
+wire contract; each corrected an artifact that contradicted SPEC.md.
+
+| Artifact | Fix |
+|---|---|
+| `conformance/batching/README.md` | The manual matrix instructed SDK authors to **re-queue** a batch after a transient network error or timeout, and labelled it SHOULD. SPEC.md §12.5 requires the opposite: on any send failure the batch MUST NOT be re-queued and its events are dropped, because the backend does not deduplicate on `messageId` and a retry would double-count. The parent `conformance/README.md` already stated this correctly. |
+| `openapi.yaml` | The `plainEvent` request-body example omitted `sessionId`, so it did not validate against the `EventBody` schema defined in the same document (2.0.0 made `sessionId` REQUIRED with `const: ""`). |
+| `openapi.yaml`, `schemas/event-body.json` | The `outputReference` / `originHint` pattern was `^\S(.*\S)?$`, which rejects internal line terminators because ECMA-262 `.` does not match them. §7.3.6 normalization is trim-only and preserves internal whitespace, so the schemas rejected output a conformant SDK would send. Now `^(?!\s)(?![\s\S]*\s$)[\s\S]+$`, which mirrors trim-only exactly. |
+| `openapi.yaml`, `schemas/event-body.json` | The §7.1 backend-compatibility note for `appVersion: null` existed only in SPEC.md prose; both machine-readable artifacts now repeat it next to the `appVersion` definition. |
+| `conformance/runner-contract.md` | The document header still declared `Version: 1.0.0` while its own Versioning section declared the contract at 1.1.0. |
+
 ## [2.0.0] - 2026-06-25 `[WIRE]`
 
 **`sessionId` is now REQUIRED on the wire (empty string `""` for server SDKs); it was previously
