@@ -1,6 +1,6 @@
 # Conformance Harness Runner Contract
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Status:** Normative
 
 > The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT",
@@ -122,18 +122,46 @@ step 3 and the `input` row above:
 
 `input` MAY be `null` (fixture-8). The harness MUST pass `null` through to the SDK.
 
-**`"trackSchemaFromEvent"`** — calls `inspector.trackSchemaFromEvent(eventName, eventProperties, streamId?)`:
+**`"trackSchemaFromEvent"`** — calls `inspector.trackSchemaFromEvent(eventName, eventProperties, streamId?, options?)`:
 
 ```json
 {
   "eventName": "Event Name",
   "eventProperties": { "key": "value" },
-  "streamId": "optional-stream-id"
+  "streamId": "optional-stream-id",
+  "options": { "outputReference": "meta-x7k2q", "originHint": "android", "originAppVersion": "4.2.0" }
 }
 ```
 
-`streamId` is optional. When absent, the harness MUST call `trackSchemaFromEvent` without the
-third argument (not with `undefined` explicitly, unless the language requires it).
+`streamId` is optional. When absent (and `options` is also absent), the harness MUST call
+`trackSchemaFromEvent` without the third argument (not with `undefined` explicitly, unless the
+language requires it).
+
+`options` is optional (SPEC.md §4.2.1 / §7.3.6). When present, the harness MUST pass the three
+values through **verbatim** — it MUST NOT trim, drop, or coerce any value; normalization is the
+SDK's job and is what the fixture asserts.
+
+How they are passed follows the SDK's own call-site shape, which SPEC.md §4.2.1 decides from the
+target language. A harness for an SDK that groups them passes the object as the fourth argument; a
+harness for an SDK that flattens them passes each key as its matching top-level parameter and omits
+the ones the envelope does not carry. Either way the envelope key stays `options` — it is the
+transport for the three values, not a claim about the SDK's signature — and either way the wire
+body the fixture asserts is the same.
+
+When `options` is present but `streamId` is absent, pass the language's null/undefined for
+`streamId`. When `options` is absent, the harness MUST NOT pass any of the three (and MUST NOT pass
+an empty options object), so the fixture exercises the 2.0.0 call shape. Statically-typed harnesses
+map each key to the corresponding typed option field or parameter; all fixture values are strings.
+
+**Why every fixture value is a string.** SPEC.md §7.3.6 normalization rule 3 also requires a
+*dynamically*-typed SDK to treat a non-string option value (number, boolean, object, array) as
+absent rather than stringify it. That rule is deliberately **not** covered by a fixture, and the
+reason is structural rather than an oversight: a statically-typed harness (C#, Go, Java, Rust)
+cannot receive `7` or `false` in a string-typed option field at all, so a fixture supplying one
+would fail every statically-typed SDK for being unrepresentable rather than for being wrong. It is
+recorded as a `manual` entry in [`runner/coverage-map.json`](./runner/coverage-map.json) and MUST
+be verified by the SDK's own unit tests in dynamically-typed languages. `wire-12` covers the part
+that *is* universally expressible: empty and whitespace-only strings are treated as absent.
 
 ### Multi-event sequence mode (`operation: "sequence"`)
 
@@ -165,7 +193,7 @@ Each element of `steps` is one action, executed in order on the same instance:
 
 | `action` | Harness behavior |
 |---|---|
-| `"track"` | Call `trackSchemaFromEvent(eventName, eventProperties, streamId?)` and await it. Same `eventProperties` / `streamId` semantics as the single-event `trackSchemaFromEvent` mode. |
+| `"track"` | Call `trackSchemaFromEvent(eventName, eventProperties, streamId?, options?)` and await it. Same `eventProperties` / `streamId` / `options` semantics as the single-event `trackSchemaFromEvent` mode (`options`, when present on the step, is passed verbatim for that call only). |
 | `"flush"` | Call `flush(timeoutMs?)` and await it. |
 | `"destroy"` | Call `destroy()`. |
 | `"trackN"` | Fire `count` (required int ≥ 1) **concurrent** `trackSchemaFromEvent` calls — real threads/goroutines/parallel tasks where the runtime supports it, else concurrently-scheduled awaited tasks — each enqueuing one distinct event named `${eventNamePrefix}${i}` (`i` from `0` to `count-1`) with empty `eventProperties` and the optional `streamId` (default `""`). The harness MUST join/await all `count` calls before the step resolves. Used to assert the atomic swap-and-clear under real concurrency (SPEC.md §3.1, §12.4); see [Concurrency fan-out](#concurrency-fan-out-trackn). |
@@ -191,6 +219,12 @@ Each element of `steps` is one action, executed in order on the same instance:
 | `expected_request_bodies` | An array of expected batch bodies; each element is itself an array of event objects (one batch = one HTTP call). Each event is format-validated for placeholder fields (`<uuid-v4>`, `<iso8601>`, `<semver>`, `<sdk-platform>`) exactly as in the wire-protocol suite. Batches are matched as an **unordered multiset**: each expected batch MUST match exactly one captured batch by contents, but batch **arrival order is NOT asserted** (a fire-and-forget SDK MAY dispatch a size-triggered batch and a later `flush()` batch concurrently, so SPEC §12 does not require in-order delivery). |
 | `expected_event_union_count` | The total number of event objects across **all** captured batches (order-independent union) MUST equal this value. Used with `trackN` to assert no events are lost or duplicated under concurrency, where batch boundaries are nondeterministic. |
 | `expected_unique_message_ids` | When `true`, every `messageId` across all captured events MUST be present and **unique** — no duplicates (no event sent twice) and the count of distinct `messageId`s MUST equal `expected_event_union_count`. Together these pin the atomic swap-and-clear invariant (SPEC.md §3.1, §12.4). |
+| `expected_request_headers` | Optional. Asserted against **every** captured request exactly as in the wire-protocol suite — see [`expected_request_headers` assertions](#expected_request_headers-assertions). A sequence that makes several calls therefore asserts the block once per batch (`batch-1` uses this to pin `env: "staging"` on both of its batches). |
+
+All five SPEC.md §7.2 required headers (`api-key`, `env`, `x-avo-client`, `content-type`,
+`content-length`) are asserted on every captured request in this mode too, whether the fixture
+declares `expected_request_headers` or not — see
+[Required request headers](#required-request-headers).
 
 **Output envelope.** For a sequence, `actual` is an array with one entry per step —
 `{ "action": "track"|"trackN"|"flush"|"destroy", "outcome": "resolve"|"reject", "value": <value or reason> }`
@@ -365,10 +399,16 @@ echo '<fixture-json>' | AVO_INSPECTOR_MOCK_ENDPOINT=http://localhost:9876 avo-in
 ```
 
 In this example, the SDK MUST POST to `http://localhost:9876` instead of
-`https://api.avo.app/inspector/v1/track`.
+`https://api.avo.app/inspector/v2/track`.
 
 The mock server URL will always be `http://localhost:<port>` (no trailing slash, no path).
 SDKs MUST send POST requests directly to this URL.
+
+**The override changes the URL only.** Every request MUST still carry the headers SPEC.md §7.2
+makes REQUIRED — `api-key`, `env`, `X-Avo-Client`, `Content-Type: application/json` and
+`Content-Length` — exactly as
+it would against the real endpoint. That is what makes the mock able to assert them (see
+[Required request headers](#required-request-headers)).
 
 **Scope:** `AVO_INSPECTOR_MOCK_ENDPOINT` is a test-only override. Production SDKs SHOULD NOT
 expose this variable in their public documentation; it is documented here for harness
@@ -403,9 +443,15 @@ failure regardless of the regex rule.
 | `"<iso8601>"` | `createdAt` | `/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/` — a 3-digit millisecond suffix (e.g. `.000Z`) MUST be present; the value of those digits is not constrained. |
 | `"<semver>"` | `libVersion` | `/^\d+\.\d+\.\d+$/` — plain SemVer, no suffix (e.g., `"1.2.0"`, not `"1.2.0+spec"`). |
 | `"<sdk-platform>"` | `libPlatform` | Any non-empty string identifying the SDK language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). Suite runner accepts any non-empty value. |
+| `"<absent>"` | any key (used for `outputReference` / `originHint`) | The key MUST NOT be present on the captured event object at all — not `null`, not `""`. This is how a fixture asserts the omission rule of SPEC.md §7.3.6 even though the runner otherwise tolerates extra keys. |
 
-All four fields are REQUIRED on every event sent to the Inspector API. A missing field is a
-conformance failure.
+`"<uuid-v4>"`, `"<iso8601>"`, `"<semver>"` and `"<sdk-platform>"` are also accepted as
+`expected_request_headers` values, where they validate a header by the same rule (used for
+`x-avo-client`, whose value is the SDK's own platform token). `"<absent>"` has no meaning for a
+header — assert an absent header with `null` instead.
+
+The four format-validated fields are REQUIRED on every event sent to the Inspector API. A missing
+field is a conformance failure. `"<absent>"` is the inverse: presence is the failure.
 
 ### Suite runner algorithm for format-validated fields
 
@@ -415,7 +461,10 @@ For each field in `expected_request_body`:
    corresponding regex in the table above.
 2. Assert that the actual field value is a non-empty string matching the regex.
 3. If the actual value is absent or does not match the regex, mark the fixture as failed.
-4. If the expected value is not a placeholder, compare by exact equality.
+4. If the expected value is the `"<absent>"` placeholder, assert that the key is **not present** on
+   the captured event object (a key present with `null` or `""` is a failure).
+5. If the expected value is not a placeholder, compare by exact equality (a literal `null` expected
+   value, e.g. `"appVersion": null`, requires a literal JSON `null` on the wire).
 
 ---
 
@@ -435,9 +484,19 @@ The suite runner MUST:
 5. Compare captured request bodies against `expected_request_body` using format-validation for
    placeholder fields.
 6. Assert that the number of captured requests matches `expected_request_count` (when specified).
-7. Assert recorded request headers against `expected_request_headers` when present (see
+7. Assert the REQUIRED request headers on **every** captured request, whether or not the fixture
+   declares any (see [Required request headers](#required-request-headers)).
+8. Assert recorded request headers against `expected_request_headers` when present (see
    [`expected_request_headers` assertions](#expected_request_headers-assertions)).
-8. Stop or reset the mock server between fixtures.
+9. Stop or reset the mock server between fixtures.
+10. Enforce a wall-clock budget on each harness process, terminating it and failing that fixture
+    with `harness timed out` if it has not exited in time. The reference runner uses 60 s
+    (`AVO_CONFORMANCE_HARNESS_TIMEOUT_MS` overrides it), which is far above the SDK's own 10-second
+    request and flush timeouts (SPEC.md §7.6, §4.6), so a conformant harness never approaches it.
+    This is a liveness requirement, not a performance one: the mock records a request only when the
+    request stream ends, so an SDK that sends a `Content-Length` larger than its body leaves the
+    server waiting for bytes that never arrive. Without the budget that hangs the entire run
+    instead of failing one fixture.
 
 ### Mock server API contract
 
@@ -465,7 +524,13 @@ Response body:
   {
     "method": "POST",
     "path": "/",
-    "headers": { "content-type": "application/json", "content-encoding": "gzip" },
+    "headers": {
+      "content-type": "application/json",
+      "content-encoding": "gzip",
+      "api-key": "test-key",
+      "env": "dev",
+      "x-avo-client": "node"
+    },
     "body": [ { "...": "..." } ]
   }
 ]
@@ -483,15 +548,53 @@ case-insensitive on the name.
 **`POST /reset`** — Clears the captured request list. The suite runner SHOULD call this between
 fixtures to ensure each fixture starts with a clean request log.
 
+### Required request headers
+
+SPEC.md §7.2 makes five headers REQUIRED on every request to the Inspector API. The suite runner
+asserts all five on **every** captured request, in every suite, independently of any
+`expected_request_headers` block — the same way it rejects a body carrying a forbidden identifier
+field. An SDK that omits them fails conformance even against a fixture that declares no header
+expectations:
+
+| Header | Runner assertion |
+|---|---|
+| `api-key` | Present, a non-empty string, and equal to the `apiKey` of every event in that same request's body. |
+| `env` | Present, exactly one of `dev` / `staging` / `prod`, and equal to the `env` of every event in that same request's body. |
+| `x-avo-client` | Present, a non-empty string, and equal to the `libPlatform` of every event in that same request's body. |
+| `content-type` | Present, and its media type is exactly `application/json` (parameters such as `; charset=utf-8` are ignored). A server SDK MUST NOT send `text/plain` — that is the browser-SDK CORS workaround, and `/inspector/v2/track` does not handle such a body correctly. |
+| `content-length` | Present and a non-negative integer. |
+
+**Why `content-length` is asserted for presence only.** Its *value* is enforced by HTTP framing
+itself, so a separate assertion would be unreachable: the server reads exactly `Content-Length`
+bytes, so what the runner receives can never disagree with what the header claims. The real bug —
+sending the uncompressed JSON length alongside a gzipped body — stalls the request until it times
+out, and the fixture then fails on a missing request rather than on a bad header. A length shorter
+than the body truncates it and fails JSON parsing. An SDK that omits the header entirely (chunked
+transfer-encoding) is what the presence check catches, and SPEC.md §7.2 forbids that: §7.3.5
+already obliges the SDK to measure the serialized body to decide on compression, so it always
+knows the exact byte count.
+
+**Header/body agreement.** All three of `api-key`, `env` and `x-avo-client` are checked against the
+body they accompany, not just for well-formedness. Each of the three comes from the same
+constructor option that produces the corresponding body field (SPEC.md §7.3.1), so the header and
+the body necessarily name the same instance; without the cross-check an SDK could send a
+well-formed header set that describes a *different* instance than the body does, and pass.
+
+The runner does not assert the *literal values* of `api-key` and `env` here, because they depend on
+the fixture's `constructor` block; a fixture pins those with `expected_request_headers` (`wire-1`
+pins `env: "dev"`, `batch-1` pins `env: "staging"`, so a hardcoded value fails one of them).
+
 ### `expected_request_headers` assertions
 
-A wire-protocol fixture MAY include an `expected_request_headers` object. When present, the
+A fixture in **any** mode MAY include an `expected_request_headers` object — the field is not
+specific to the wire-protocol suite, and `batch-1` uses it in sequence mode. When present, the
 suite runner MUST assert each entry against the headers of every recorded request (header names
 are matched case-insensitively). Each value is one of:
 
 | Expected value | Assertion |
 |---|---|
 | a literal string (e.g., `"gzip"`) | The header MUST be present and equal to this value exactly. |
+| a placeholder (e.g., `"<sdk-platform>"`) | The header MUST be present and match the placeholder's rule from [Format validation](#format-validation). Used for `x-avo-client`, whose value differs per SDK. |
 | `null` | The header MUST be **absent** from the request. |
 
 This is how a fixture asserts that a small body carries **no** `Content-Encoding`
@@ -543,6 +646,11 @@ submitting conformance results.
 - [ ] Harness passes `null` event properties through to `extractSchema` unchanged (fixture-8).
 - [ ] Harness honors `AVO_INSPECTOR_MOCK_ENDPOINT` — the SDK under test sends HTTP calls to
       the mock server URL when this variable is set.
+- [ ] The SDK under test sends the SPEC.md §7.2 required headers on every request even when the
+      endpoint is overridden: `api-key` (the fixture's `constructor.apiKey`), `env` (the fixture's
+      `constructor.env`), `X-Avo-Client` (the SDK's `libPlatform`),
+      `Content-Type: application/json`, and `Content-Length` (the byte length of the body actually
+      sent — the compressed length when the body is gzipped).
 - [ ] Harness exits with code `0` on success, `1` on a harness/runtime invocation failure
       (never to signal an assertion result), and `2` on configuration/envelope errors.
 - [ ] Harness handles all `operation` values: `"extractSchema"`, `"trackSchemaFromEvent"`, and
@@ -553,6 +661,10 @@ submitting conformance results.
 - [ ] Harness handles the `"trackN"` sequence action: fires `count` `trackSchemaFromEvent` calls
       concurrently (real parallelism where the runtime supports it), and joins all of them before
       resolving the step (batch-6 concurrency fixture).
+- [ ] Harness passes `input.options` (single-event mode) and `step.options` (`track` steps) through
+      to `trackSchemaFromEvent` verbatim — as the fourth argument for an SDK that groups the three,
+      or as the matching top-level parameters for one that flattens them (SPEC.md §4.2.1) — and
+      passes none of them when the fixture has no `options` (wire-9 through wire-13, batch-7).
 - [ ] Harness does not persist state between invocations — each run constructs a fresh
       `AvoInspector` instance.
 
@@ -582,10 +694,30 @@ Suite runners SHOULD produce a conformance report with the following structure p
 ### Versioning
 
 The harness contract follows the same versioning policy as the spec (`VERSIONING.md`). The
-contract version is `1.0.0` — the initial publication, which includes the optional batch
-configuration fields (`batchSize`, `batchFlushSeconds`, `maxQueueSize`, `disableBatchTimer`) in the
-`constructor` object, and the `sequence`-mode actions (`track`, `trackN`, `flush`, `destroy`) with
-the concurrency union assertions (`expected_event_union_count`, `expected_unique_message_ids`).
+contract version is `1.1.0` — additive: the optional `options` object on single-event
+`trackSchemaFromEvent` input and on `track` steps, the `"<absent>"` placeholder, placeholder values
+in `expected_request_headers`, and the always-on required-header assertions.
+
+**What a `1.0.0` harness must change.** The additions split in two, and only one half is free:
+
+- **Runner-side, no harness edit.** The `"<absent>"` placeholder, placeholder values in
+  `expected_request_headers`, and the always-on required-header assertions are all evaluated by the
+  suite runner against captured mock traffic. A `1.0.0` harness needs no edit for them — but the
+  **SDK it drives** must send all five asserted headers, or every request-making fixture fails.
+- **Harness edit REQUIRED.** `options` is a new optional field on the input envelope
+  (`input.options` in single-event mode, `step.options` on a `track` step). A `1.0.0` harness
+  ignores it and never supplies the three coordinates, so it cannot pass `wire-9` – `wire-13` or
+  `batch-7`. Forward the values verbatim in whichever call-site shape the SDK implements — the
+  object as the fourth argument, or each key as its matching top-level parameter (SPEC.md §4.2.1)
+  — per [`operation` values and `input` shapes](#operation-values-and-input-shapes); the
+  implementation checklist item is below.
+
+The output envelope and the exit-code semantics are unchanged, so no `1.0.0` behavior is
+invalidated — this is why the bump is MINOR and not MAJOR. `1.0.0` was
+the initial publication, which includes the optional batch configuration fields (`batchSize`,
+`batchFlushSeconds`, `maxQueueSize`, `disableBatchTimer`) in the `constructor` object, and the
+`sequence`-mode actions (`track`, `trackN`, `flush`, `destroy`) with the concurrency union
+assertions (`expected_event_union_count`, `expected_unique_message_ids`).
 Breaking changes to the input/output envelope schema or exit code semantics MUST increment the
 MAJOR version. Additive fields (new optional input or output fields) MUST increment the MINOR
 version.

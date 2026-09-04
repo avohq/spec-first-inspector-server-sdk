@@ -5,3 +5,7 @@ config:
     code_blocks: false
     code_spans: false
   MD060: false
+  # Each release entry repeats "### Changed" / "### Fixed" under its own "## [x.y.z]" heading,
+  # which is the Keep a Changelog shape. siblings_only still flags a true duplicate within one release.
+  MD024:
+    siblings_only: true

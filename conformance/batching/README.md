@@ -7,25 +7,29 @@ the runner contract — see [Multi-event sequence mode](../runner-contract.md#mu
 
 All fixtures use `env: "staging"` so `batchSize` is honored (under `env: "dev"` the SDK forces
 `batchSize = 1`, which disables batching). Like the wire-protocol suite, this suite requires the
-mock server and `AVO_INSPECTOR_MOCK_ENDPOINT`.
+mock server and `AVO_INSPECTOR_MOCK_ENDPOINT`, and every captured request must carry the required
+`api-key` / `env` / `X-Avo-Client` / `Content-Type: application/json` / `Content-Length` headers (SPEC.md §7.2).
 
 ## Fixtures
 
 | Fixture ID | Behavior verified |
 |---|---|
-| `batch-1` | **Size trigger + mixed-stream batch.** `batchSize: 3`; the 3rd `track` flushes exactly 3 events as one array (a 4th starts a fresh batch drained by `flush()`). A single batch MAY mix `streamId`/`eventName`. |
+| `batch-1` | **Size trigger + mixed-stream batch.** `batchSize: 3`; the 3rd `track` flushes exactly 3 events as one array (a 4th starts a fresh batch drained by `flush()`). A single batch MAY mix `streamId`/`eventName`. Also pins the SPEC.md §7.2 required headers on both captured batches with `env: "staging"` — `wire-1` pins the same header as `dev`, so a hardcoded value fails one of the two. |
 | `batch-2` | **`flush()` drains a partial batch.** `batchSize: 30`; two buffered events are force-sent as one batch by `flush()`. |
 | `batch-3` | **`destroy()` discards unsent.** Two buffered events, then `destroy()` → zero HTTP calls. |
 | `batch-4` | **`maxQueueSize` FIFO overflow.** `maxQueueSize: 2`; appending a 3rd event drops the oldest; the flushed batch is `[E2, E3]`. |
 | `batch-5` | **Non-200 is not re-queued.** `batchSize: 2` with per-call `mock_responses` `[500, 200]`; the failed first batch is NOT resent in the second call. |
 | `batch-6` | **Concurrency: atomic swap-and-clear.** `trackN` fires 200 concurrent tracks then `flush()`; the captured union MUST be exactly 200 events with unique `messageId`s (no lost / duplicated / torn events). |
+| `batch-7` | **Per-event gateway options.** Three `track` steps for the *same* event name and schema — `{ outputReference: "meta-x7k2q", originAppVersion: "4.2.0" }`, `{ outputReference: "ga4-z9k1p", originHint: "android" }`, and no `options` — then `flush()`; one batch of exactly 3 events, each carrying its own `outputReference` (or none), identical `eventProperties`, and its own per-event `appVersion` (`"4.2.0"` override / literal `null` / constructor `"1.0.0"`) that MUST survive batch serialization; no deduplication (SPEC.md §4.2.1, §7.3.6, §12.7). |
 
 ## How it works
 
 1. The suite runner starts a local mock HTTP server and sets `AVO_INSPECTOR_MOCK_ENDPOINT`.
 2. It pipes the fixture (with `operation: "sequence"`) to the harness. The harness constructs one
    instance and runs each `steps` entry in order — `track` / `flush` / `destroy` — awaiting each
-   `track` and `flush`, and performing **no implicit flush** of its own.
+   `track` and `flush`, and performing **no implicit flush** of its own. A `track` step MAY carry an
+   `options` object (gateway coordinates, SPEC.md §4.2.1) that the harness passes verbatim for that
+   call only.
 3. After the harness exits, the runner queries `GET /requests` and asserts `expected_request_count`
    and `expected_request_bodies` (each batch is one captured POST body; placeholder fields such as
    `<uuid-v4>` / `<iso8601>` / `<semver>` / `<sdk-platform>` are format-validated).
@@ -36,18 +40,27 @@ so the harness awaits all in-flight sends before exiting.
 
 ## Conformance Definition
 
-An SDK **passes** the batching suite when all six fixtures pass: the captured request count and the
-ordered batch bodies match each fixture's expectations (with format validation applied to placeholder
+An SDK **passes** the batching suite when all seven fixtures pass: the captured request count and the
+batch bodies match each fixture's expectations (with format validation applied to placeholder
 fields), and the `batch-6` concurrency union assertions hold (exactly K events, unique `messageId`s).
+
+Bodies are matched as **unordered multisets** at both levels — each expected batch must match one
+distinct captured batch, and the events within a batch are compared without regard to position.
+Neither the arrival order of batches nor the order of elements inside a batch is asserted, so an SDK
+MUST NOT be written to satisfy a particular ordering. `batch-7` relies on this: its three elements
+are distinguished by their resolved `outputReference` and `appVersion`, not by their position.
 
 ## Still verified manually
 
 Concurrent enqueue + flush (atomic swap-and-clear) is now **automated** by `batch-6` via the `trackN`
-fan-out (SPEC.md §3.1 and §12.4 are MUSTs). The following two **SHOULD-level** behaviors remain in the
-manual matrix in [`../README.md`](../README.md) — they are intentionally not automated because they
-are non-normative (SHOULD) and would require test-only hooks beyond the wire protocol:
+fan-out (SPEC.md §3.1 and §12.4 are MUSTs). The following two behaviors remain in the manual matrix
+in [`../README.md`](../README.md) — they are intentionally not automated because verifying them
+requires test-only hooks beyond the wire protocol:
 
 - **Time / idle flush** (`batchFlushSeconds`, SPEC.md §12.3 — SHOULD) — needs a controllable clock /
   test-only time hook.
-- **Transient (network/timeout) re-queue at the front** (SPEC.md §12.5 — SHOULD) — needs the mock to
-  simulate a dropped connection or timeout rather than an HTTP status.
+- **Transient (network/timeout) send failure** (SPEC.md §12.5 — MUST NOT re-queue) — the batch is
+  dropped after logging and MUST NOT be re-queued or retried; the backend does not deduplicate on
+  `messageId`, so a retry would double-count events (at-most-once delivery, §3.2 and §12.6).
+  Verifying it needs the mock to simulate a dropped connection or timeout rather than an HTTP
+  status; the non-200 half of the same rule is automated by `batch-5`.

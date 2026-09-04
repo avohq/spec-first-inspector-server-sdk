@@ -4,13 +4,16 @@ info:
   description: |
     HTTP wire protocol for the Avo Inspector server-side SDK.
 
-    POST /inspector/v1/track accepts a JSON array of one or more event objects (a single event
+    POST /inspector/v2/track accepts a JSON array of one or more event objects (a single event
     when batching is inactive, multiple when a batch is flushed — see SPEC.md Section 12).
-    Authentication is carried inside the JSON body via the `apiKey` field — there is no
-    Authorization header.
+
+    Authentication is carried by the `api-key` request header — there is no Authorization header.
+    The endpoint also reads the environment from the `env` request header and the sending platform
+    from the `X-Avo-Client` request header; all three are REQUIRED. The `apiKey` and `env` fields
+    stay in the body for body-shape stability but are ignored by this endpoint.
 
     See SPEC.md (Section 7) for the full normative wire-protocol specification.
-  version: "2.0.0"
+  version: "3.0.0"
   contact:
     name: Avo Support
     email: support@avo.app
@@ -22,12 +25,14 @@ servers:
   - url: https://api.avo.app
     description: Production Inspector API
 
-# Authentication is carried inside the JSON request body via the `apiKey` field.
-# There is no Authorization header. Security is intentionally empty at the HTTP level.
-security: []
+# Authentication is carried by the `api-key` request header (see components.securitySchemes).
+# There is no Authorization header. The `apiKey` field is still present in the request body for
+# body-shape stability across ingestion paths, but this endpoint ignores it (SPEC.md §7.2).
+security:
+  - ApiKeyHeader: []
 
 paths:
-  /inspector/v1/track:
+  /inspector/v2/track:
     post:
       operationId: trackEventSchema
       summary: Track an event schema
@@ -38,6 +43,17 @@ paths:
         `trackSchemaFromEvent` call enqueues one event; the array carries multiple events when a
         batch is flushed (see SPEC.md Section 12). In `dev` (where batchSize is forced to 1) each
         call sends a single-element array.
+
+        Five request headers are REQUIRED (SPEC.md §7.2): `api-key` (the Inspector API key —
+        modelled as the ApiKeyHeader security scheme), `env` (`dev` | `staging` | `prod`),
+        `X-Avo-Client` (the sending platform, equal to the event body's `libPlatform`),
+        `Content-Type: application/json`, and `Content-Length` (the byte length of the body
+        actually sent — the compressed length when the body is gzipped, never the length of the
+        uncompressed JSON; an SDK MUST NOT switch to chunked transfer-encoding to avoid supplying
+        it). The last two are transport headers determined by the request itself, so they are
+        described here rather than declared under `parameters`. A missing or invalid `api-key` or
+        `env` header is answered `400 {"ok": false, "error": "..."}` and no event is ingested. This
+        endpoint does not sample: the `samplingRate` it returns is `1.0`.
 
         The SDK MUST apply a 10-second timeout to every call.
         On 200, the SDK MUST update its internal samplingRate from the response body.
@@ -50,6 +66,28 @@ paths:
         < 1024 bytes, no gzip implementation is available, or compression fails; the backend
         accepts both compressed and uncompressed bodies. See SPEC.md §7.3.5.
       parameters:
+        - name: env
+          in: header
+          required: true
+          description: |
+            The environment of the sending SDK instance, exactly as in the event body's `env`
+            field. The endpoint reads the environment from this header, not from the body.
+            A missing or out-of-enum value is answered `400 {"ok": false, "error": "..."}`.
+          schema:
+            type: string
+            enum: ["dev", "staging", "prod"]
+        - name: X-Avo-Client
+          in: header
+          required: true
+          description: |
+            Identifies the sending platform so traffic can be attributed without decoding the
+            body. For a generated server SDK this is its `libPlatform` value (e.g. `node`, `ruby`,
+            `csharp`, `go`); it MUST equal the `libPlatform` field of every event in the body and
+            MUST NOT vary per call (SPEC.md §7.2).
+          schema:
+            type: string
+            minLength: 1
+            examples: ["node", "ruby", "csharp", "go"]
         - name: Content-Encoding
           in: header
           required: false
@@ -88,31 +126,62 @@ paths:
                         propertyType: "string"
                       - propertyName: "trialDays"
                         propertyType: "int"
+              gatewayEvent:
+                summary: Event observed at one gateway output (SPEC.md §7.3.6)
+                value:
+                  - apiKey: "MY_GATEWAY_KEY"
+                    appName: "my-app"
+                    appVersion: "4.2.0"
+                    libVersion: "1.2.0"
+                    env: "prod"
+                    libPlatform: "ruby"
+                    messageId: "550e8400-e29b-41d4-a716-446655440001"
+                    streamId: ""
+                    createdAt: "2026-09-03T12:00:00.000Z"
+                    samplingRate: 1.0
+                    type: "event"
+                    eventName: "purchase"
+                    outputReference: "meta-x7k2q"
+                    originHint: "android"
+                    eventProperties:
+                      - propertyName: "items"
+                        propertyType: "list(object)"
+                        children: []
       responses:
         "200":
           description: |
             Event schema accepted. The SDK MUST update its internal samplingRate if the
-            response body contains a numeric samplingRate in [0.0, 1.0].
+            response body contains a numeric samplingRate in [0.0, 1.0]; a 200 body without a
+            samplingRate field leaves the current value unchanged. `success: false` reports a
+            workspace-level event-limit drop, not a transport failure — it MUST NOT be retried.
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/TrackResponse"
-              example:
-                samplingRate: 1.0
+              examples:
+                accepted:
+                  summary: Accepted (this endpoint does not sample, so samplingRate is 1.0)
+                  value:
+                    samplingRate: 1.0
+                    success: true
+                eventLimitDrop:
+                  summary: Dropped by the workspace event limit (still HTTP 200)
+                  value:
+                    success: false
         "400":
           description: |
-            Bad request. The SDK MUST resolve (not reject) the promise on non-200 responses.
-            In dev/staging with logging enabled, the status code SHOULD be logged.
+            Bad request — returned when the `api-key` request header is missing or empty, or the
+            `env` request header is missing or is not one of `dev` / `staging` / `prod`. No event
+            in the request is ingested. The SDK MUST resolve (not reject) the promise on non-200
+            responses and MUST NOT retry. In dev/staging with logging enabled, the status code
+            SHOULD be logged.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "401":
-          description: Unauthorized. Invalid or missing apiKey in the request body.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/BadRequestResponse"
+              example:
+                ok: false
+                error: "Missing api-key header"
         "429":
           description: Rate limited.
           content:
@@ -127,10 +196,19 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
 
 components:
+  securitySchemes:
+    ApiKeyHeader:
+      type: apiKey
+      in: header
+      name: api-key
+      description: |
+        The Inspector API key, sent verbatim in the `api-key` request header. REQUIRED: a missing
+        or empty header is answered `400 {"ok": false, "error": "..."}` (SPEC.md §7.2).
+
   schemas:
     EventBatch:
       description: |
-        The top-level request body for POST /inspector/v1/track.
+        The top-level request body for POST /inspector/v2/track.
         An array of one or more event objects (a single event when batching is inactive,
         e.g. env dev; multiple when a batch is flushed — see SPEC.md Section 12).
       type: array
@@ -140,17 +218,28 @@ components:
 
     EventBody:
       description: |
-        A single event object in the Inspector v1 track request body.
+        A single event object in the Inspector v2 track request body.
         type must be 'event'. See schemas/event-body.json for the JSON Schema definition.
       type: object
-      # SPEC.md §3.3, §7.3.1: trackingId, visitorId, and userId MUST NOT be sent. sessionId is
-      # REQUIRED and MUST be the empty string for server SDKs — the ingestion pipeline drops
-      # events that omit it.
+      # SPEC.md §3.3, §7.3.1: trackingId, visitorId, and userId MUST NOT be sent. sessionId was
+      # REQUIRED in 2.0.0 and is removed in 3.0.0 — the endpoint supplies it. It is deliberately
+      # NOT listed as forbidden below, so a sender that still emits it during the ingestion
+      # transition in SPEC.md §7.1 validates as an unknown extra field.
       not:
         anyOf:
           - required: [trackingId]
           - required: [visitorId]
           - required: [userId]
+      # SPEC.md §7.3.6: appVersion may be null ONLY when originHint is present (source-scoped
+      # event with no usable per-event version); without originHint the constructor version is sent.
+      # A null appVersion is accepted by /inspector/v2/track and recorded as "unversioned".
+      if:
+        required: [appVersion]
+        properties:
+          appVersion:
+            type: "null"
+      then:
+        required: [originHint]
       required:
         - apiKey
         - appName
@@ -160,7 +249,6 @@ components:
         - libPlatform
         - messageId
         - streamId
-        - sessionId
         - createdAt
         - samplingRate
         - type
@@ -170,14 +258,23 @@ components:
         apiKey:
           type: string
           minLength: 1
-          description: The Inspector API key passed to the constructor.
+          description: |
+            The Inspector API key passed to the constructor. Also sent in the `api-key` request
+            header, which is the copy this endpoint authenticates on (SPEC.md §7.2); the body copy
+            is ignored but MUST still be present.
         appName:
           type: string
           description: Application name. Empty string if not provided.
         appVersion:
-          type: string
+          type: [string, "null"]
           minLength: 1
-          description: Application version (version constructor option).
+          description: |
+            Per-event application version. The `version` constructor option unless overridden by
+            `options.originAppVersion`; a literal JSON `null` ONLY when `options.originHint` is
+            set and no usable `options.originAppVersion` was provided (SPEC.md §7.3.6). The key is
+            always present.
+            A `null` value is accepted by this endpoint and recorded as `unversioned`; the SDK MUST
+            NOT suppress, substitute, or drop such an event.
         libVersion:
           type: string
           pattern: "^\\d+\\.\\d+\\.\\d+$"
@@ -188,11 +285,16 @@ components:
             - dev
             - staging
             - prod
-          description: Environment. Exact wire values.
+          description: |
+            Environment. Exact wire values. Also sent in the `env` request header, which is the
+            copy this endpoint reads (SPEC.md §7.2); the body copy is ignored but MUST still be
+            present.
         libPlatform:
           type: string
           minLength: 1
-          description: SDK platform/language identifier (e.g. node, ruby, python, go).
+          description: |
+            SDK platform/language identifier (e.g. node, ruby, python, go). MUST equal the
+            `X-Avo-Client` request header value (SPEC.md §7.2).
         messageId:
           type: string
           pattern: "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
@@ -200,10 +302,6 @@ components:
         streamId:
           type: string
           description: Caller-supplied streamId, or empty string if none provided.
-        sessionId:
-          type: string
-          const: ""
-          description: Always empty string for server SDKs. Required by the Inspector ingestion pipeline.
         createdAt:
           type: string
           pattern: "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$"
@@ -225,6 +323,32 @@ components:
           items:
             $ref: "#/components/schemas/EventPropertyPlain"
           description: Extracted schema — array of plain property objects.
+        outputReference:
+          type: string
+          minLength: 1
+          pattern: "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+          description: |
+            OPTIONAL gateway coordinate (SPEC.md §7.3.6): reference of the gateway output this
+            observation was bound for (e.g. `meta-x7k2q`). Absent = gateway-level checkpoint.
+            Trimmed; omitted entirely (never `null` or `""`) when empty or whitespace-only.
+            The pattern mirrors the §7.3.6 trim-only rule exactly: leading and trailing
+            whitespace are rejected because normalization removes them, while internal
+            whitespace — line breaks included — is preserved and therefore accepted. Do not
+            simplify it to `^\S(.*\S)?$`, which rejects a value containing a newline that a
+            conformant SDK would send unchanged.
+        originHint:
+          type: string
+          minLength: 1
+          pattern: "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$"
+          description: |
+            OPTIONAL gateway coordinate (SPEC.md §7.3.6): low-cardinality label of the source the
+            event came from (e.g. `android`). Never a user identifier. Trimmed; omitted entirely
+            (never `null` or `""`) when empty or whitespace-only.
+            The pattern mirrors the §7.3.6 trim-only rule exactly: leading and trailing
+            whitespace are rejected because normalization removes them, while internal
+            whitespace — line breaks included — is preserved and therefore accepted. Do not
+            simplify it to `^\S(.*\S)?$`, which rejects a value containing a newline that a
+            conformant SDK would send unchanged.
 
     EventPropertyPlain:
       description: |
@@ -284,21 +408,54 @@ components:
             $ref: "#/components/schemas/SchemaChildElement"
 
     TrackResponse:
-      description: Response body for a successful 200 track call.
+      description: |
+        Response body for a 200 track call. `samplingRate` is absent from the event-limit-drop
+        shape (`{"success": false}`), so neither field is required.
       type: object
-      required:
-        - samplingRate
       properties:
         samplingRate:
           type: number
           minimum: 0.0
           maximum: 1.0
-          description: Updated sampling rate. SDK MUST apply this value.
+          description: |
+            Updated sampling rate. SDK MUST apply this value when present and numeric.
+            /inspector/v2/track does not sample, so it returns 1.0.
+        success:
+          type: boolean
+          description: |
+            false when the workspace event limit dropped the event (still HTTP 200). Not a
+            transport failure and MUST NOT be retried.
 
     ErrorResponse:
-      description: Error response body for non-200 responses.
+      description: |
+        Permissive error body, used for the generic `429` and `500` responses. Neither SPEC.md nor
+        the endpoint contract specifies what those carry, so both properties are OPTIONAL — but a
+        body claiming `"ok": true` is still rejected. The `400` shape IS specified; it uses the
+        strict `BadRequestResponse` below.
       type: object
       properties:
+        ok:
+          type: boolean
+          const: false
+          description: Always `false` on an error response, pinned so a success-marked error body is rejected.
         error:
           type: string
           description: Human-readable error message.
+    BadRequestResponse:
+      description: |
+        The `400` body, which SPEC.md §7.2 and §7.4 specify exactly as
+        `{"ok": false, "error": "<message>"}`. Both properties are REQUIRED, so a generated
+        validator rejects `{}` and `{"ok": false}` — unlike the permissive `ErrorResponse`, which
+        has to tolerate the unspecified `429` / `500` bodies.
+      type: object
+      required:
+        - ok
+        - error
+      properties:
+        ok:
+          type: boolean
+          const: false
+          description: Always `false` on a `400`.
+        error:
+          type: string
+          description: Human-readable reason the `api-key` or `env` header was rejected.

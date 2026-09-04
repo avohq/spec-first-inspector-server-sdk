@@ -5,7 +5,9 @@
   "description": "Validation tooling for the Avo Inspector server SDK spec repository. The spec itself is the product; this package is not published.",
   "scripts": {
     "validate:fixtures": "node scripts/validate-fixtures.mjs",
-    "conformance:run": "node conformance/runner/suite-runner.mjs"
+    "conformance:run": "node conformance/runner/suite-runner.mjs",
+    "check:reference-sdk": "node scripts/check-reference-sdk.mjs",
+    "test": "npm run validate:fixtures && npm run check:reference-sdk && npm run conformance:run"
   },
   "devDependencies": {
     "ajv": "^8.17.1"
