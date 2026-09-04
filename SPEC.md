@@ -516,12 +516,13 @@ override replaces the request URL only — every header required by Section 7.2 
 > discards the event when it is absent. The request still answers `200 {"success":true}` in both
 > cases, so a sender that drops the field before ingestion accepts its absence loses **every
 > event, silently** — the precise failure that made the field required in 2.0.0 in the first
-> place. The ingestion change that defaults the field is in flight and lands before any sender
-> generated from this release reaches production. Until it does, a sender already running in
-> production SHOULD keep sending `sessionId: ""`; the field is an unknown extra field to this
-> spec's schemas rather than a forbidden one, so a body that still carries it stays conformant and
-> the conformance suite passes either way. This note will be removed when the ingestion change
-> ships.
+> place. The ingestion change that defaults the field is in flight; it **MUST** ship before any
+> sender generated from this release reaches production, and confirming that it has is a release
+> gate rather than an assumption this document can make on anyone's behalf. Until it is confirmed,
+> a sender already running in production SHOULD keep sending `sessionId: ""`. That remains
+> conformant: the field is an unknown extra field to this spec's schemas rather than a forbidden
+> one, so a body still carrying it validates and the conformance suite passes either way. This
+> note will be removed when the ingestion change ships.
 
 ### 7.2 Request Headers
 
