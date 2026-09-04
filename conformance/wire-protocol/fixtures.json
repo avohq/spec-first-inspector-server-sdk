@@ -240,14 +240,14 @@
   },
   {
     "fixture_id": "wire-9",
-    "description": "Gateway options: outputReference, originHint and per-event appVersion all set are sent as top-level siblings of eventProperties",
+    "description": "Gateway options: outputReference, originHint and per-event appVersion all set are sent as top-level siblings of eventProperties, trimmed — internal line terminators are preserved",
     "constructor": { "apiKey": "test-key", "env": "dev", "version": "1.0.0", "appName": "TestApp" },
     "operation": "trackSchemaFromEvent",
     "input": {
       "eventName": "purchase",
       "eventProperties": { "plan": "pro", "seats": 3 },
       "streamId": "stream-gw",
-      "options": { "outputReference": "meta-x7k2q", "originHint": "android", "appVersion": "4.2.0" }
+      "options": { "outputReference": "  meta-x7k2q\nmeta-b3n8w  ", "originHint": "\tandroid\rtv \n", "appVersion": "  4.2.0  " }
     },
     "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
     "expected_request_body": [
@@ -265,8 +265,8 @@
         "samplingRate": 1.0,
         "type": "event",
         "eventName": "purchase",
-        "outputReference": "meta-x7k2q",
-        "originHint": "android",
+        "outputReference": "meta-x7k2q\nmeta-b3n8w",
+        "originHint": "android\rtv",
         "eventProperties": [
           { "propertyName": "plan", "propertyType": "string" },
           { "propertyName": "seats", "propertyType": "int" }
@@ -274,7 +274,7 @@
       }
     ],
     "expected_promise_outcome": "resolve",
-    "notes": "SPEC.md §4.2.1 / §7.3.6 row 1 (originHint set + appVersion provided). The harness passes input.options VERBATIM as the fourth argument. outputReference and originHint MUST be top-level keys of the event object, never inside eventProperties; appVersion is the per-event override '4.2.0', not the constructor's '1.0.0'. eventProperties is unchanged by options."
+    "notes": "SPEC.md §4.2.1 / §7.3.6 row 1 (originHint set + appVersion provided). The harness passes input.options VERBATIM as the fourth argument. outputReference and originHint MUST be top-level keys of the event object, never inside eventProperties; appVersion is the per-event override '4.2.0', not the constructor's '1.0.0'. eventProperties is unchanged by options. All three option values arrive padded, so this fixture also pins the normalization rule as trim-only: leading and trailing whitespace (space, tab, CR, LF) is removed, and whitespace INSIDE a value — the LF in outputReference and the CR in originHint — is preserved byte for byte. An SDK that strips, collapses or rejects internal line terminators fails here. The schemas encode the same rule: the outputReference / originHint pattern is ^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$."
   },
   {
     "fixture_id": "wire-10",

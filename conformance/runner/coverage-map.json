@@ -314,12 +314,13 @@
       ]
     },
     {
-      "behavior": "Gateway options normalization: trimmed; empty / whitespace-only => key OMITTED (never null / \"\"), asserted via the \"<absent>\" placeholder",
+      "behavior": "Gateway options normalization is TRIM-ONLY: surrounding whitespace removed, internal whitespace (including LF / CR) preserved byte for byte; empty / whitespace-only => key OMITTED (never null / \"\"), asserted via the \"<absent>\" placeholder",
       "spec": [
         "SPEC.md §7.3.6",
         "runner-contract.md Format validation (<absent>)"
       ],
       "fixtures": [
+        "wire-9",
         "wire-10",
         "wire-11",
         "wire-12"

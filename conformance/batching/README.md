@@ -40,8 +40,14 @@ so the harness awaits all in-flight sends before exiting.
 ## Conformance Definition
 
 An SDK **passes** the batching suite when all seven fixtures pass: the captured request count and the
-ordered batch bodies match each fixture's expectations (with format validation applied to placeholder
+batch bodies match each fixture's expectations (with format validation applied to placeholder
 fields), and the `batch-6` concurrency union assertions hold (exactly K events, unique `messageId`s).
+
+Bodies are matched as **unordered multisets** at both levels — each expected batch must match one
+distinct captured batch, and the events within a batch are compared without regard to position.
+Neither the arrival order of batches nor the order of elements inside a batch is asserted, so an SDK
+MUST NOT be written to satisfy a particular ordering. `batch-7` relies on this: its three elements
+are distinguished by their resolved `outputReference` and `appVersion`, not by their position.
 
 ## Still verified manually
 

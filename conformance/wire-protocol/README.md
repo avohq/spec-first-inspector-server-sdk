@@ -15,7 +15,7 @@ and correctly handles `streamId` edge cases.
 | `wire-6` | Large body (≥ 1024 bytes) — MUST be gzip-compressed on any gzip-capable runtime (SPEC.md §7.3.5); transparent after gunzip |
 | `wire-7` | Small body (< 1024 bytes) — MUST be sent uncompressed (no `Content-Encoding` header) |
 | `wire-8` | Batching — `env: staging` + `batchSize: 30`; one tracked event is buffered, not sent (0 HTTP calls before flush) (SPEC.md §12) |
-| `wire-9` | Gateway fields — `options.outputReference` + `originHint` + `appVersion` all set → all three on the wire as top-level siblings of `eventProperties` (SPEC.md §4.2.1, §7.3.6) |
+| `wire-9` | Gateway fields — `options.outputReference` + `originHint` + `appVersion` all set, all padded → all three on the wire as top-level siblings of `eventProperties`, trimmed, with internal line terminators preserved (SPEC.md §4.2.1, §7.3.6) |
 | `wire-10` | `originHint` set (padded, trimmed on the wire) with no `appVersion` → `appVersion` is a literal `null`; `outputReference` absent (SPEC.md §7.3.6 table row 2) |
 | `wire-11` | `outputReference` + `appVersion` set (padded, trimmed), no `originHint` → `appVersion` overrides the constructor version; `originHint` absent (SPEC.md §7.3.6 table row 3) |
 | `wire-12` | Empty / whitespace-only options → both gateway keys absent (never `null` / `""`), `appVersion` falls back to the constructor version; body identical to the no-options shape (SPEC.md §7.3.6 table row 4) |
@@ -157,9 +157,12 @@ An SDK **passes** the wire-protocol suite when all 13 fixtures pass:
 - `wire-8`: The harness exits with code `0`, the promise resolves, and the mock server recorded **0**
   requests — with `env: "staging"` and `batchSize: 30`, a single tracked event is buffered (below the
   size threshold) and MUST NOT be sent before a flush (SPEC.md §12.3).
-- `wire-9`: exactly 1 request whose event carries `outputReference: "meta-x7k2q"`, `originHint: "android"`
-  and `appVersion: "4.2.0"` (the per-event override, not the constructor's `"1.0.0"`) as top-level keys,
-  with `eventProperties` unchanged.
+- `wire-9`: exactly 1 request whose event carries `outputReference`, `originHint` and
+  `appVersion: "4.2.0"` (the per-event override, not the constructor's `"1.0.0"`) as top-level keys,
+  with `eventProperties` unchanged. All three inputs are padded, so the fixture also pins that
+  normalization is trim-only: surrounding whitespace is removed while the LF inside
+  `outputReference` and the CR inside `originHint` survive byte for byte. An SDK that strips or
+  collapses internal line terminators fails this fixture.
 - `wire-10`: exactly 1 request with `originHint: "android"` (input was `"  android  "`), a literal
   `appVersion: null`, and **no** `outputReference` key.
 - `wire-11`: exactly 1 request with `outputReference: "meta-x7k2q"` and `appVersion: "4.2.0"` (both
