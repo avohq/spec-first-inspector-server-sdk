@@ -142,7 +142,7 @@ language requires it).
 MUST NOT trim, drop, or coerce any value; normalization is the SDK's job and is what the fixture
 asserts. When `options` is present but `streamId` is absent, pass the language's null/undefined
 for `streamId`. When `options` is absent, the harness MUST NOT pass a fourth argument (not an empty
-object), so the fixture exercises the pre-2.1.0 call shape. Statically-typed harnesses map each
+object), so the fixture exercises the 2.0.0 call shape. Statically-typed harnesses map each
 key to the corresponding typed option field; all fixture values are strings.
 
 ### Multi-event sequence mode (`operation: "sequence"`)
@@ -375,10 +375,15 @@ echo '<fixture-json>' | AVO_INSPECTOR_MOCK_ENDPOINT=http://localhost:9876 avo-in
 ```
 
 In this example, the SDK MUST POST to `http://localhost:9876` instead of
-`https://api.avo.app/inspector/v1/track`.
+`https://api.avo.app/inspector/v2/track`.
 
 The mock server URL will always be `http://localhost:<port>` (no trailing slash, no path).
 SDKs MUST send POST requests directly to this URL.
+
+**The override changes the URL only.** Every request MUST still carry the headers SPEC.md §7.2
+makes REQUIRED — `api-key`, `env`, `X-Avo-Client` and `Content-Type: application/json` — exactly as
+it would against the real endpoint. That is what makes the mock able to assert them (see
+[Required request headers](#required-request-headers)).
 
 **Scope:** `AVO_INSPECTOR_MOCK_ENDPOINT` is a test-only override. Production SDKs SHOULD NOT
 expose this variable in their public documentation; it is documented here for harness
@@ -415,6 +420,11 @@ failure regardless of the regex rule.
 | `"<sdk-platform>"` | `libPlatform` | Any non-empty string identifying the SDK language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). Suite runner accepts any non-empty value. |
 | `"<absent>"` | any key (used for `outputReference` / `originHint`) | The key MUST NOT be present on the captured event object at all — not `null`, not `""`. This is how a fixture asserts the omission rule of SPEC.md §7.3.6 even though the runner otherwise tolerates extra keys. |
 
+`"<uuid-v4>"`, `"<iso8601>"`, `"<semver>"` and `"<sdk-platform>"` are also accepted as
+`expected_request_headers` values, where they validate a header by the same rule (used for
+`x-avo-client`, whose value is the SDK's own platform token). `"<absent>"` has no meaning for a
+header — assert an absent header with `null` instead.
+
 The four format-validated fields are REQUIRED on every event sent to the Inspector API. A missing
 field is a conformance failure. `"<absent>"` is the inverse: presence is the failure.
 
@@ -449,9 +459,11 @@ The suite runner MUST:
 5. Compare captured request bodies against `expected_request_body` using format-validation for
    placeholder fields.
 6. Assert that the number of captured requests matches `expected_request_count` (when specified).
-7. Assert recorded request headers against `expected_request_headers` when present (see
+7. Assert the REQUIRED request headers on **every** captured request, whether or not the fixture
+   declares any (see [Required request headers](#required-request-headers)).
+8. Assert recorded request headers against `expected_request_headers` when present (see
    [`expected_request_headers` assertions](#expected_request_headers-assertions)).
-8. Stop or reset the mock server between fixtures.
+9. Stop or reset the mock server between fixtures.
 
 ### Mock server API contract
 
@@ -479,7 +491,13 @@ Response body:
   {
     "method": "POST",
     "path": "/",
-    "headers": { "content-type": "application/json", "content-encoding": "gzip" },
+    "headers": {
+      "content-type": "application/json",
+      "content-encoding": "gzip",
+      "api-key": "test-key",
+      "env": "dev",
+      "x-avo-client": "node"
+    },
     "body": [ { "...": "..." } ]
   }
 ]
@@ -497,6 +515,24 @@ case-insensitive on the name.
 **`POST /reset`** — Clears the captured request list. The suite runner SHOULD call this between
 fixtures to ensure each fixture starts with a clean request log.
 
+### Required request headers
+
+SPEC.md §7.2 makes three headers REQUIRED on every request to the Inspector API. The suite runner
+asserts them on **every** captured request, in every suite, independently of any
+`expected_request_headers` block — the same way it rejects a body carrying a forbidden identifier
+field. An SDK that omits them fails conformance even against a fixture that declares no header
+expectations:
+
+| Header | Runner assertion |
+|---|---|
+| `api-key` | Present and a non-empty string. |
+| `env` | Present and exactly one of `dev` / `staging` / `prod`. |
+| `x-avo-client` | Present, a non-empty string, and equal to the `libPlatform` of every event in that same request's body (SPEC.md §7.2 — the header identifies the sender, so the two cannot disagree). |
+
+The runner does not assert the *values* of `api-key` and `env` here, because they depend on the
+fixture's `constructor` block; a fixture pins those with `expected_request_headers` (`wire-1` pins
+`env: "dev"`, `batch-1` pins `env: "staging"`, so a hardcoded value fails one of them).
+
 ### `expected_request_headers` assertions
 
 A wire-protocol fixture MAY include an `expected_request_headers` object. When present, the
@@ -506,6 +542,7 @@ are matched case-insensitively). Each value is one of:
 | Expected value | Assertion |
 |---|---|
 | a literal string (e.g., `"gzip"`) | The header MUST be present and equal to this value exactly. |
+| a placeholder (e.g., `"<sdk-platform>"`) | The header MUST be present and match the placeholder's rule from [Format validation](#format-validation). Used for `x-avo-client`, whose value differs per SDK. |
 | `null` | The header MUST be **absent** from the request. |
 
 This is how a fixture asserts that a small body carries **no** `Content-Encoding`
@@ -557,6 +594,10 @@ submitting conformance results.
 - [ ] Harness passes `null` event properties through to `extractSchema` unchanged (fixture-8).
 - [ ] Harness honors `AVO_INSPECTOR_MOCK_ENDPOINT` — the SDK under test sends HTTP calls to
       the mock server URL when this variable is set.
+- [ ] The SDK under test sends the SPEC.md §7.2 required headers on every request even when the
+      endpoint is overridden: `api-key` (the fixture's `constructor.apiKey`), `env` (the fixture's
+      `constructor.env`), `X-Avo-Client` (the SDK's `libPlatform`), and
+      `Content-Type: application/json`.
 - [ ] Harness exits with code `0` on success, `1` on a harness/runtime invocation failure
       (never to signal an assertion result), and `2` on configuration/envelope errors.
 - [ ] Harness handles all `operation` values: `"extractSchema"`, `"trackSchemaFromEvent"`, and
@@ -600,7 +641,10 @@ Suite runners SHOULD produce a conformance report with the following structure p
 
 The harness contract follows the same versioning policy as the spec (`VERSIONING.md`). The
 contract version is `1.1.0` — additive: the optional `options` object on single-event
-`trackSchemaFromEvent` input and on `track` steps, and the `"<absent>"` placeholder. `1.0.0` was
+`trackSchemaFromEvent` input and on `track` steps, the `"<absent>"` placeholder, placeholder values
+in `expected_request_headers`, and the always-on required-header assertions (all runner-side; the
+harness stdin/stdout envelope is unchanged, so a `1.0.0` harness needs no edit — only the SDK it
+drives must send the headers). `1.0.0` was
 the initial publication, which includes the optional batch configuration fields (`batchSize`,
 `batchFlushSeconds`, `maxQueueSize`, `disableBatchTimer`) in the `constructor` object, and the
 `sequence`-mode actions (`track`, `trackN`, `flush`, `destroy`) with the concurrency union

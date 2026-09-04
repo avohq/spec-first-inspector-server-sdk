@@ -1,6 +1,6 @@
 # SPEC.md — Avo Inspector Server SDK Specification
 
-**Version:** 2.1.0
+**Version:** 3.0.0
 **Status:** Normative
 **Repository:** `avohq/spec-first-inspector-server-sdk`
 
@@ -218,7 +218,7 @@ destination, and labels each observation with two coordinates:
 - Adding `options` MUST NOT break existing call sites: it is trailing and optional (in a language
   without optional parameters, keep the existing three-parameter signature and add a four-parameter
   overload that the three-parameter one delegates to). A call without `options`, or with an empty
-  options object, MUST produce a wire body identical to the pre-2.1.0 body.
+  options object, MUST produce a wire body identical to the 2.0.0 body.
 - `options` is read **per call**: each call's values apply only to the event enqueued by that call.
   Two calls for the same event with different `outputReference` values are two distinct
   observations and MUST both be sent (there is no deduplication in server SDKs; gated by the
@@ -354,8 +354,8 @@ be in-flight.
 
 | Name | Type | Required | Default | Semantics |
 |---|---|---|---|---|
-| `apiKey` | string | YES | — | Inspector API key from the Avo Inspector dashboard. Sent in the request body as `apiKey`. MUST be non-empty and non-whitespace. |
-| `env` | `"dev"` or `"staging"` or `"prod"` | YES | Falls back to `"dev"` if invalid/absent | Controls logging defaults. Sent in the request body as `env`. Exact string values are part of the wire protocol. |
+| `apiKey` | string | YES | — | Inspector API key from the Avo Inspector dashboard. Sent in the `api-key` request header (the copy the endpoint authenticates on) and, unchanged, in the request body as `apiKey`. MUST be non-empty and non-whitespace. |
+| `env` | `"dev"` or `"staging"` or `"prod"` | YES | Falls back to `"dev"` if invalid/absent | Controls logging defaults. Sent in the `env` request header (the copy the endpoint reads) and, unchanged, in the request body as `env`. Exact string values are part of the wire protocol. |
 | `version` | string | YES | — | Application version. Sent in the request body as `appVersion`. MUST be non-empty and non-whitespace. Comparable string (integer or semantic version). |
 | `appName` | string | NO | `""` | Application name. Sent in the request body as `appName`. |
 | `batchSize` | integer | NO | `30` | Flush the pending batch when its length reaches `batchSize`. **Forced to `1` when `env == "dev"`** (immediate send), overriding any configured value. MUST be ≥ 1; values < 1 fall back to the default with a console warning. See Section 12. |
@@ -404,19 +404,20 @@ applies at construction time.
 ### 7.1 Endpoint
 
 ```text
-POST https://api.avo.app/inspector/v1/track
+POST https://api.avo.app/inspector/v2/track
 ```
 
 - **Scheme:** HTTPS only. HTTP is not acceptable.
 - **Host:** `api.avo.app`
 - **Port:** 443 (implicit for HTTPS)
-- **Path:** `/inspector/v1/track`
+- **Path:** `/inspector/v2/track`
 - **Method:** POST
 - **TLS validation:** SDKs MUST use the host platform's default TLS certificate validation.
   SDKs MUST NOT provide any configuration option to disable certificate validation.
 
 When the environment variable `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST send HTTP
-calls to that URL instead of `https://api.avo.app`. This is used by the conformance suite.
+calls to that URL instead of `https://api.avo.app`. This is used by the conformance suite. The
+override replaces the request URL only — every header required by Section 7.2 MUST still be sent.
 
 > **Security requirement:** the gate that honors `AVO_INSPECTOR_MOCK_ENDPOINT` MUST be
 > **fail-closed (default-deny)**: an instance constructed with `env: "prod"` MUST ignore the
@@ -431,34 +432,53 @@ calls to that URL instead of `https://api.avo.app`. This is used by the conforma
 
 <!-- Separates the two callouts: without it the blank line reads as one blockquote (MD028). -->
 
-> **Backend compatibility note for the gateway fields (informative, as of 2026-09-03).** The
-> `/inspector/v1/track` ingestion path currently uses a fast parser that does **not** decode
-> `outputReference` / `originHint` (it discards them) and that **drops** any event whose
-> `appVersion` is `null` (the request still returns `200`). The other ingestion paths
-> (`/inspector/gtm/v1/track`, `/inspector/v2/track`) decode both fields and tolerate
-> `appVersion: null`. Until the v1 parser is updated, a gateway-scoped integration on v1 SHOULD
-> pair `originHint` with a non-blank `options.appVersion`, and an SDK SHOULD emit a one-time
-> warning when `originHint` is set without a usable `appVersion` (Section 7.3.6). The wire
-> contract in this spec is unchanged by the backend gap; this note will be removed when the gap
-> closes.
+> **What `/inspector/v2/track` is (informative).** v2 is the one Inspector ingestion endpoint
+> shared by every Inspector sender; each sender identifies itself with the `X-Avo-Client` header
+> (Section 7.2), so traffic can be attributed without decoding a request body. Compared with the
+> older `/inspector/v1/track` path it **decodes the gateway coordinate fields** `outputReference`
+> and `originHint` (Section 7.3.6), **tolerates a `null` `appVersion`** — the observation is stored
+> as `unversioned` instead of the event being dropped — and **does not sample server-side**
+> (Section 7.7). Nothing there changes what a conformant SDK sends beyond the endpoint itself and
+> the headers in Section 7.2.
 
 ### 7.2 Request Headers
 
-| Header | Value |
-|---|---|
-| `Content-Type` | `application/json` |
-| `Accept` | `application/json` |
-| `Content-Length` | Byte length of the request body actually sent (compressed length when `Content-Encoding: gzip` is present, otherwise the byte length of the serialized JSON) |
-| `Content-Encoding` | `gzip` — present ONLY when the body is gzip-compressed (see Section 7.3.5). MUST be absent for uncompressed bodies. |
+| Header | Value | Presence |
+|---|---|---|
+| `api-key` | The `apiKey` constructor option, verbatim | REQUIRED |
+| `env` | The instance's environment — exactly `dev`, `staging`, or `prod` (Section 6.1) | REQUIRED |
+| `X-Avo-Client` | The SDK's `libPlatform` value (Section 7.3.1) — e.g. `node`, `ruby`, `csharp`, `go` | REQUIRED |
+| `Content-Type` | `application/json` | REQUIRED |
+| `Accept` | `application/json` | RECOMMENDED |
+| `Content-Length` | Byte length of the request body actually sent (compressed length when `Content-Encoding: gzip` is present, otherwise the byte length of the serialized JSON) | REQUIRED |
+| `Content-Encoding` | `gzip` — present ONLY when the body is gzip-compressed (see Section 7.3.5). MUST be absent for uncompressed bodies. | CONDITIONAL |
 
-There is no `Authorization` header. Authentication is carried inside the JSON body via the
-`apiKey` field.
+**Authentication.** There is no `Authorization` header: the API key travels in the `api-key`
+request header. `/inspector/v2/track` reads both the API key and the environment from these
+headers and never from the JSON body. The body MUST nevertheless keep carrying its own `apiKey`
+and `env` fields (Section 7.3.1): v2 ignores those copies, and keeping them keeps one body shape
+and one request schema across ingestion paths.
 
-> **`Content-Type` stays `application/json` for server SDKs.** The browser SDK sends
-> compressed bodies with `Content-Type: text/plain` to avoid a CORS preflight (`OPTIONS`)
-> round-trip. Server-side SDKs are not subject to CORS and MUST keep `Content-Type:
-> application/json` whether or not the body is compressed; the Inspector backend
-> distinguishes compressed bodies by the `Content-Encoding` header alone.
+**Rejection behavior.** A request whose `api-key` header is missing or empty, or whose `env`
+header is missing or is any string other than `dev` / `staging` / `prod`, is rejected with **HTTP
+`400`** and a body of the shape `{"ok":false,"error":"<message>"}`; none of its events are
+ingested. For the SDK a `400` is an ordinary non-200 response: it MUST resolve rather than reject,
+MUST NOT retry, and the batch is dropped after logging (Sections 7.5, 7.5.2, 12.5). Because both
+header values come from constructor options that are validated at construction time (Section 4.1),
+a conformant SDK never provokes this response.
+
+**`X-Avo-Client`.** The value identifies the *sender*, not the event: it MUST be the same string
+the SDK writes to `libPlatform` on every event object, MUST be constant for the life of the
+process, and MUST NOT be derived from per-call input. It exists so that ingestion can attribute
+traffic per sender without decoding a body.
+
+> **`Content-Type` stays `application/json` for server SDKs.** Browser SDKs send compressed
+> bodies with `Content-Type: text/plain` to avoid a CORS preflight (`OPTIONS`) round-trip.
+> Server-side SDKs are not subject to CORS and MUST keep `Content-Type: application/json`
+> whether or not the body is compressed; the Inspector backend distinguishes compressed bodies
+> by the `Content-Encoding` header alone. `text/plain` is additionally unsafe on
+> `/inspector/v2/track`, which does not handle a `text/plain` body correctly, so a server SDK
+> MUST NOT send it.
 
 ### 7.3 Request Body
 
@@ -503,19 +523,19 @@ These fields MUST be present on every event object:
 
 | Field | Type | Description |
 |---|---|---|
-| `apiKey` | string | The Inspector API key passed to the constructor. |
+| `apiKey` | string | The Inspector API key passed to the constructor. Also sent in the `api-key` request header, which is the copy the endpoint authenticates on (Section 7.2); the body copy MUST still be present. |
 | `appName` | string | `appName` constructor option (empty string `""` if not provided). |
 | `appVersion` | string \| null | The `version` constructor option, unless overridden per event by `options.appVersion`. A literal JSON `null` ONLY when `options.originHint` is set and no usable `options.appVersion` was provided (rule in Section 7.3.6). The key is always present. |
 | `libVersion` | string | SDK library version. MUST be a plain SemVer string (e.g., `"1.2.0"`). No suffix. See Section 7.3.3 for canonical version file guidance. |
-| `env` | string | One of `"dev"`, `"staging"`, `"prod"` (exact wire values from `AvoInspectorEnv`). |
-| `libPlatform` | string | Identifies the SDK platform/language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). MUST be a non-empty string. |
+| `env` | string | One of `"dev"`, `"staging"`, `"prod"` (exact wire values from `AvoInspectorEnv`). Also sent in the `env` request header, which is the copy the endpoint reads (Section 7.2); the body copy MUST still be present. |
+| `libPlatform` | string | Identifies the SDK platform/language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). MUST be a non-empty string and MUST equal the `X-Avo-Client` request header value (Section 7.2). |
 | `messageId` | string | UUID v4 (random). MUST be unique per event. See Section 8. |
 | `streamId` | string | The caller-supplied stream id, or `""` if none provided. |
 | `sessionId` | string | Always the empty string `""` for server SDKs. MUST be present (required by the Inspector ingestion pipeline, which drops events that omit it). Server SDKs do not model end-user sessions. See Section 3.3. |
 | `createdAt` | string | ISO 8601 UTC timestamp at event send time (e.g., `"2026-05-25T12:00:00.000Z"`). A 3-digit millisecond suffix (e.g., `.000Z`) MUST be present; the value of those digits is not constrained. |
 | `samplingRate` | number | Current sampling rate `[0.0, 1.0]`. Initial value `1.0`. Updated from server response. |
 
-> **Note on omitted fields:** `trackingId` MUST NOT be sent in v1. It is dead weight from the
+> **Note on omitted fields:** `trackingId` MUST NOT be sent. It is dead weight from the
 > browser SDK and carries no information for server-side use cases. Implementations MUST NOT
 > include it. (`sessionId` is NOT omitted — it is required and MUST be sent as the empty string
 > `""`; see Section 3.3.)
@@ -675,16 +695,16 @@ ordinary property: it stays in `eventProperties` untouched and does not populate
   | present | present | `options.appVersion` |
   | present | absent | `null` — the instance's configured version never applies to a source-scoped event |
   | absent | present | `options.appVersion` |
-  | absent | absent | the instance's `version` (unchanged pre-2.1.0 behavior) |
+  | absent | absent | the instance's `version` (unchanged 2.0.0 behavior) |
 
   Rationale: an event carrying `originHint` came from a *different* source than the app this SDK
   instance was configured for, so the instance-level version would be wrong; sending `null` is
   preferable to a misleading version.
 
-- When `originHint` is present and the resolved `appVersion` is `null`, the SDK SHOULD log a
-  one-time (per process) warning that the event's `appVersion` will be sent as `null` — the current
-  v1 ingestion path drops such events (Section 7.1 backend note). The warning MUST NOT include the
-  option values themselves.
+- A `null` `appVersion` needs no special handling in the SDK: `/inspector/v2/track` accepts the
+  event and records the observation as `unversioned`. An SDK MUST NOT suppress, substitute, or drop
+  such an event, and no warning is required. (If an SDK chooses to log one anyway, the log MUST NOT
+  include the option values — Section 7.5.1.)
 - Session-started or any other non-`event` body types (not part of this spec) are unaffected.
 
 **Example** — a call of
@@ -719,19 +739,29 @@ and the property-name collision) and `batch-7` (per-event options inside one bat
 
 ### 7.4 Response
 
-**200 OK:**
+**200 OK — accepted:**
 
 ```json
-{ "samplingRate": 0.5 }
+{ "samplingRate": 1.0, "success": true }
+```
+
+**200 OK — dropped by the workspace event limit:**
+
+```json
+{ "success": false }
 ```
 
 The SDK MUST update its internal `samplingRate` when the response body contains a numeric
-`samplingRate` value in `[0.0, 1.0]`. The update MUST only occur on status code `200`.
+`samplingRate` value in `[0.0, 1.0]`. The update MUST only occur on status code `200`; a `200`
+body that carries no `samplingRate` field leaves the current value unchanged. `success: false`
+reports a workspace-level drop, not a transport failure: it MUST NOT be treated as an error, MUST
+NOT be retried (Section 12.5), and MAY be logged when logging is enabled.
 
 **Non-200:**
 
 The SDK MUST resolve (not reject) the promise on non-200 responses. In dev/staging with logging
-enabled, the status code SHOULD be logged.
+enabled, the status code SHOULD be logged. A `400` carries `{"ok":false,"error":"<message>"}` and
+means the `api-key` or `env` request header was missing or invalid (Section 7.2).
 
 ### 7.5 Error Taxonomy
 
@@ -811,6 +841,12 @@ buffered events (see §3.2, §12.6) and performs no retry.
 - The sampling rate is updated from the response body of any successful 200 response.
 - In multi-threaded runtimes, `samplingRate` MUST be updated using a lock or atomic primitive.
   Last-write-wins is acceptable.
+- **`/inspector/v2/track` does not sample server-side.** That ingestion path pins the
+  `samplingRate` it returns to `1.0`, and the counts it stores are exact rather than extrapolated
+  from a sampled fraction. This changes none of the SDK obligations above: an SDK still reads
+  `samplingRate` from every `200` response, still evaluates the per-event check at enqueue, and
+  still honors whatever value it is given. It only means the value an SDK receives from the server
+  is `1.0`, so server-driven sampling no longer reduces what the SDK sends.
 
 ---
 
@@ -1417,7 +1453,7 @@ OUTSIDE the lock. The buffer is shared mutable state and MUST be synchronized pe
   the batch MUST NOT be re-queued; its events are dropped and the failure is logged per §7.5. The
   SDK does not retry sends: buffered events have at-most-once delivery (see §3.2, §12.6).
 - The Inspector backend does not deduplicate on `messageId`, so retrying a failed batch would
-  double-count events. At-most-once delivery is the deliberate v1 contract; callers that need
+  double-count events. At-most-once delivery is the deliberate contract; callers that need
   stronger guarantees must `flush()` and handle failures themselves.
 
 ### 12.6 Persistence and Lifecycle
@@ -1511,7 +1547,9 @@ manifest metadata, or a `SPEC_VERSION` constant).
 
 ---
 
-*Spec version: 2.1.0 — adds the OPTIONAL gateway coordinates `outputReference` / `originHint` and
-the per-event `appVersion` override (`options`, Sections 4.2.1 and 7.3.6); 2.0.0 made `sessionId` a
-required wire field (empty string for server SDKs).*
-*Last updated: 2026-09-03.*
+*Spec version: 3.0.0 — moves every request to `POST https://api.avo.app/inspector/v2/track` and
+makes the `api-key`, `env` and `X-Avo-Client` request headers REQUIRED (Sections 7.1, 7.2); also
+adds the OPTIONAL gateway coordinates `outputReference` / `originHint` and the per-event
+`appVersion` override (`options`, Sections 4.2.1 and 7.3.6). 2.0.0 made `sessionId` a required wire
+field (empty string for server SDKs).*
+*Last updated: 2026-09-04.*

@@ -11,7 +11,8 @@
 //   4. spawns the harness, writes one input JSON line to stdin, reads one output line,
 //   5. asserts outcome / value (with placeholder-regex format validation and the
 //      "<absent>" key-must-not-exist placeholder), request count, request bodies
-//      (unordered multiset), union count, unique messageIds, headers, and
+//      (unordered multiset), union count, unique messageIds, the SPEC §7.2 required
+//      request headers (on every captured request), fixture-declared headers, and
 //      mock_response:null => zero requests.
 //
 // Prints a per-fixture PASS/FAIL line and a summary; exits non-zero if any fail.
@@ -147,6 +148,48 @@ function deepEqual(a, b) {
 // "expects" them.
 const FORBIDDEN_WIRE_FIELDS = new Set(["trackingId", "visitorId", "userId"]);
 
+// Exact wire values of the `env` header / body field (SPEC §6.1).
+const VALID_ENVS = new Set(["dev", "staging", "prod"]);
+
+/**
+ * Assert the headers SPEC §7.2 makes REQUIRED on every request to
+ * /inspector/v2/track. Enforced by the runner on EVERY captured request — like
+ * FORBIDDEN_WIRE_FIELDS — so an SDK that omits or mislabels them fails conformance
+ * even for a fixture that declares no `expected_request_headers`. `X-Avo-Client`
+ * identifies the sender, so it must also equal the `libPlatform` of every event in
+ * the request it accompanies.
+ * @param {Array<{ headers?: Object, body?: * }>} requests - Captured requests from the mock.
+ * @returns {{ ok: boolean, reason?: string }} ok:true when every request is well-formed.
+ */
+function assertRequiredHeaders(requests) {
+  for (const req of requests) {
+    const headers = req.headers || {};
+    const apiKey = headers["api-key"];
+    if (typeof apiKey !== "string" || apiKey.length === 0) {
+      return { ok: false, reason: `required header api-key missing or empty (SPEC §7.2)` };
+    }
+    const env = headers["env"];
+    if (!VALID_ENVS.has(env)) {
+      return { ok: false, reason: `required header env must be dev|staging|prod, got "${env ?? "absent"}" (SPEC §7.2)` };
+    }
+    const client = headers["x-avo-client"];
+    if (typeof client !== "string" || client.length === 0) {
+      return { ok: false, reason: `required header x-avo-client missing or empty (SPEC §7.2)` };
+    }
+    if (Array.isArray(req.body)) {
+      for (const event of req.body) {
+        if (event && typeof event === "object" && typeof event.libPlatform === "string" && event.libPlatform !== client) {
+          return {
+            ok: false,
+            reason: `header x-avo-client "${client}" != libPlatform "${event.libPlatform}" (SPEC §7.2)`,
+          };
+        }
+      }
+    }
+  }
+  return { ok: true };
+}
+
 /**
  * Match one captured event body against an expected body, applying placeholder
  * format-validation for placeholder-valued expected fields and rejecting any
@@ -279,8 +322,9 @@ function extractBatches(requests) {
 
 /**
  * Assert expected request headers across every captured request. A null expected
- * value asserts the header is absent; otherwise it must equal exactly (case-insensitive name).
- * @param {Object<string, string|null>} expectedHeaders - Header name -> expected value (or null for absent).
+ * value asserts the header is absent; a placeholder string (e.g. "<sdk-platform>")
+ * validates by format; anything else must equal exactly (case-insensitive name).
+ * @param {Object<string, string|null>} expectedHeaders - Header name -> expected value, placeholder, or null for absent.
  * @param {Array<{ headers?: Object }>} requests - Captured requests from the mock.
  * @returns {{ ok: boolean, reason?: string }} ok:true when all headers match, else a failure reason.
  */
@@ -292,6 +336,12 @@ function assertHeaders(expectedHeaders, requests) {
       const actual = req.headers ? req.headers[key] : undefined;
       if (expected === null) {
         if (actual !== undefined) return { ok: false, reason: `header ${key} expected absent, got "${actual}"` };
+      } else if (typeof expected === "string" && PLACEHOLDERS[expected]) {
+        // Same placeholder vocabulary as expected_request_body: a header whose value
+        // is SDK-specific (X-Avo-Client is the SDK's libPlatform) is format-validated.
+        if (!PLACEHOLDERS[expected](actual)) {
+          return { ok: false, reason: `header ${key} expected to match ${expected}, got "${actual ?? "absent"}"` };
+        }
       } else {
         if (actual !== expected) return { ok: false, reason: `header ${key} expected "${expected}", got "${actual ?? "absent"}"` };
       }
@@ -452,6 +502,12 @@ async function runFixture(suite, fixture, harnessCmd, mock) {
   if ("expected_request_bodies" in fixture && batches) {
     const result = matchBatchesUnordered(fixture.expected_request_bodies, batches);
     if (!result.ok) failures.push(`expected_request_bodies: ${result.reason}`);
+  }
+
+  // --- required headers on every captured request (SPEC §7.2) ----------------
+  if (requests.length > 0) {
+    const result = assertRequiredHeaders(requests);
+    if (!result.ok) failures.push(`required request headers: ${result.reason}`);
   }
 
   // --- expected_request_headers ----------------------------------------------

@@ -22,22 +22,88 @@ spec version declaration patterns.
 
 ---
 
-## [2.1.0] - 2026-09-03 `[WIRE]`
+## [3.0.0] - 2026-09-04 `[WIRE]`
 
-**Adds the OPTIONAL gateway coordinates `outputReference` / `originHint` and a per-event `appVersion`
-override, via a new trailing `options` parameter on `trackSchemaFromEvent`.** This is the server-SDK
-half of Avo's multi-gate model: one Inspector API key per *gateway* instead of one source per
-destination, with each observation labeled by which gateway output it was bound for
-(`outputReference`; absent = gateway checkpoint) and which source it came from (`originHint`;
-low-cardinality, never a user identifier). The Inspector ingestion API already accepts both fields
-as optional strings; this release specifies how a server SDK produces them.
+**Every request moves from `POST https://api.avo.app/inspector/v1/track` to
+`POST https://api.avo.app/inspector/v2/track`, and three request headers become REQUIRED:
+`api-key`, `env` and `X-Avo-Client`.** v2 is the one Inspector ingestion endpoint shared by every
+Inspector sender; each sender identifies itself with `X-Avo-Client` so traffic can be attributed
+without decoding a request body. For a generated server SDK the value of that header is the SDK's
+own `libPlatform` (`node`, `ruby`, `csharp`, `go`, …).
 
-Per [`VERSIONING.md`](./VERSIONING.md) this is an additive wire-protocol change (new OPTIONAL request
-fields; a call without `options` is unchanged), so it is a **MINOR** release. **Downstream SDKs SHOULD
-regenerate** to gain gateway support; an SDK generated from 2.0.0 remains conformant for non-gateway
-use.
+Per [`VERSIONING.md`](./VERSIONING.md) a changed HTTP endpoint is a breaking wire-protocol change,
+so this is a **MAJOR** release. **Downstream SDKs MUST regenerate**: an SDK generated from 2.0.0
+posts to the old path and sends none of the three headers, so it is no longer conformant.
 
-### Wire contract (normative summary — SPEC.md §4.2.1, §7.3.6)
+> **2.1.0 was never released.** The OPTIONAL gateway coordinates (`outputReference` / `originHint`)
+> and the per-event `appVersion` override were prepared as a 2.1.0 minor and are folded into this
+> release instead, because they ship together with the endpoint move. Everything a 2.1.0 entry
+> would have carried is below, minus the backend caveats that v2 makes obsolete.
+
+### The wire change (normative summary — SPEC.md §7.1, §7.2)
+
+- **Endpoint:** `POST https://api.avo.app/inspector/v2/track` (HTTPS, port 443). Unchanged:
+  `AVO_INSPECTOR_MOCK_ENDPOINT` still overrides the URL for conformance runs, still fail-closed for
+  `env: "prod"`, and the override replaces the URL **only** — the headers below are still sent.
+- **Required headers:**
+
+  | Header | Value |
+  |---|---|
+  | `api-key` | The `apiKey` constructor option, verbatim |
+  | `env` | Exactly `dev` / `staging` / `prod` |
+  | `X-Avo-Client` | The SDK's `libPlatform`, identical on every request, never per-call input |
+  | `Content-Type` | `application/json` — `text/plain` MUST NOT be used |
+
+- **Authentication moved out of the body.** v2 reads the API key and the environment from the
+  headers, never from the JSON body. A missing or empty `api-key`, or a missing/out-of-enum `env`,
+  is answered **`400 {"ok":false,"error":"..."}`** and none of the request's events are ingested.
+  For the SDK a `400` is an ordinary non-200: resolve, do not retry, drop the batch after logging.
+- **The request body is unchanged.** It still carries its own `apiKey` and `env` fields; v2 ignores
+  those copies. Keeping them keeps one body shape and one JSON Schema across ingestion paths, so
+  `schemas/event-batch.json` and `schemas/event-body.json` are structurally identical to 2.0.0.
+- **`X-Avo-Client` MUST equal `libPlatform`.** The header identifies the sender, the body field
+  identifies the same sender; a request where the two disagree is a conformance failure.
+
+### What v2 changes behaviorally
+
+- **It decodes the gateway coordinate fields.** `outputReference` and `originHint` are read and
+  stored, which is the whole reason for the move.
+- **It tolerates a `null` `appVersion`,** recording the observation as `unversioned` rather than
+  dropping the event.
+- **It does not sample server-side.** The `samplingRate` it returns is pinned to `1.0` and stored
+  counts are exact rather than extrapolated. No SDK obligation changes: an SDK still reads
+  `samplingRate` from every `200`, still evaluates sampling per event at enqueue, and still honors
+  whatever value it is given (SPEC.md §7.7).
+- **Response shapes:** `200 {"samplingRate":1.0,"success":true}` on success; `200 {"success":false}`
+  when the workspace event limit dropped the event (not a transport failure, never retried);
+  `400 {"ok":false,"error":"..."}` for a bad `api-key` / `env` header.
+- *Informative, and not a server-SDK concern:* a browser-based sender additionally needs the
+  ingestion endpoint's CORS allowlist to accept these headers before it can reach v2 from a
+  browser. Server-side SDKs are not subject to CORS and are unaffected.
+
+### Removed: the v1 backend-compatibility caveats
+
+The 2.1.0 work documented, correctly at the time, that the `/inspector/v1/track` ingestion path
+discarded `outputReference` / `originHint` and dropped events whose `appVersion` was `null`. **That
+is a property of v1 and is obsolete for any sender on v2.** Every occurrence is deleted in the same
+change that moves the endpoint, because leaving one in place would actively mislead:
+
+| Where | What was removed |
+|---|---|
+| `SPEC.md` §7.1 | The dated "Backend compatibility note for the gateway fields" blockquote, replaced by a short description of what v2 is. |
+| `SPEC.md` §7.3.6 | The SHOULD-level "warn once per process when `appVersion` resolves to `null`" rule. Its only rationale was that the v1 parser silently dropped those events; v2 accepts them and records `unversioned`, so the warning would now flag a correct, documented outcome as a problem. The rule is deleted rather than reworded, and the spec now states positively that a `null` `appVersion` needs no special handling and MUST NOT cause the SDK to suppress, substitute, or drop the event. |
+| `AGENTS.md` | The matching checklist item and the warning clause of AC-27. |
+| `openapi.yaml`, `schemas/event-body.json` | The `appVersion` backend-compat prose and the `if`/`then` `$comment` repeating it. The `appVersion: null` ⇒ `originHint` required rule itself is unchanged — it is a wire rule, not a backend workaround. |
+| `conformance/wire-protocol/fixtures.json` | The `wire-10` note instructing the SDK to emit that warning. |
+| `conformance/runner/coverage-map.json` | The `manual` entry that tracked the warning as an unautomated SHOULD. |
+| `conformance/runner/example-harness/sdk.mjs` | The one-shot warning latch in the reference SDK. |
+
+### Gateway coordinates and the per-event `appVersion` (SPEC.md §4.2.1, §7.3.6)
+
+Prepared as 2.1.0, shipping here. This is the server-SDK half of Avo's multi-gate model: one
+Inspector API key per *gateway* instead of one source per destination, with each observation
+labeled by which gateway output it was bound for (`outputReference`; absent = gateway checkpoint)
+and which source it came from (`originHint`; low-cardinality, never a user identifier).
 
 - `trackSchemaFromEvent(eventName, eventProperties, streamId?, options?)` with
   `options = { outputReference?: string; originHint?: string; appVersion?: string }` (trailing and
@@ -49,39 +115,35 @@ use.
 - `appVersion` (always present) follows a four-cell rule: `options.appVersion` when provided; a
   literal JSON `null` when `originHint` is set and no usable `options.appVersion` was given (the
   event is source-scoped, so the instance's configured version never applies); otherwise the
-  constructor `version`. SDKs SHOULD warn once per process when it resolves to `null`.
+  constructor `version`.
 - `options` are per call; two calls for the same event with different `outputReference` values are
   two observations and are both sent (no deduplication).
-
-### Backend compatibility note (informative)
-
-As of 2026-09-03 the `/inspector/v1/track` ingestion path does **not** decode the two fields and
-**drops** events whose `appVersion` is `null` (still HTTP 200); the other ingestion paths decode both
-and tolerate `null`. Until the v1 parser is updated, pair `originHint` with a non-blank
-`options.appVersion`. The spec's wire contract is unchanged by this; SPEC.md §7.1 carries the dated
-note.
+- A call without `options` produces a body identical to the 2.0.0 body.
 
 ### Changed
 
 | Artifact | Change |
 |---|---|
-| `SPEC.md` §4.2 / new §4.2.1 | `options?: TrackOptions` on `trackSchemaFromEvent`; option semantics, API requirements. |
-| `SPEC.md` §7.1 | Dated backend-compatibility note for the gateway fields. |
-| `SPEC.md` §7.3 / §7.3.1 | `appVersion` is now `string \| null` under the §7.3.6 rule; instance-level field list no longer lists `appVersion` unconditionally. |
-| `SPEC.md` new §7.3.6 | Normative wire mapping: presence/omission, normalization, the four-cell `appVersion` table, one-time warning, example body. |
-| `SPEC.md` §12.7 | A batch MAY mix elements with/without gateway fields and with different per-event `appVersion`. |
-| `SPEC.md` Conformance Harness Reference | `"<absent>"` placeholder. |
-| `openapi.yaml`, `schemas/event-body.json` | `appVersion` nullable, with an `if`/`then` rule that `null` requires `originHint`; OPTIONAL `outputReference` / `originHint` (`minLength: 1`, no surrounding whitespace); new `gatewayEvent` example. |
-| `conformance/runner-contract.md` (1.1.0) | `input.options` and `steps[].options` passed verbatim; `"<absent>"` placeholder; checklist item. |
-| `conformance/wire-protocol/fixtures.json` | `wire-9` – `wire-13`: all-set, `originHint` without `appVersion` → `null`, override without `originHint`, whitespace-only → omitted + fallback, property-name collision. |
-| `conformance/batching/fixtures.json` | `batch-7`: per-event `options` inside one batch (own `outputReference` and own resolved `appVersion` — override / `null` / constructor), no deduplication. |
-| `conformance/runner/suite-runner.mjs` | `"<absent>"` key-must-not-exist assertion in `matchBody`. |
-| `conformance/runner/example-harness/{sdk,harness}.mjs` | Reference SDK implements §4.2.1 / §7.3.6; harness forwards `options`. **Also fixes a 2.0.0 regression:** the example SDK never sent `sessionId: ""`, so 10 of the 30 fixtures failed on `main` (`npm run conformance:run` was red); it is green again at 36/36. |
-| `conformance/runner/coverage-map.json`, `conformance/**/README.md`, `AGENTS.md` | Fixture counts (36 total), new automated/manual entries, checklist items, AC-26 / AC-27 (27 ACs). |
+| `SPEC.md` §7.1 | Endpoint is `/inspector/v2/track`; the v1 backend-compatibility note is replaced by a description of what v2 is (decodes the gateway fields, tolerates `appVersion: null`, does not sample); the mock-endpoint override explicitly replaces the URL only. |
+| `SPEC.md` §7.2 | Request-header table gains `api-key`, `env` and `X-Avo-Client` as REQUIRED with a Presence column; new normative prose for authentication-by-header, the exact `400` rejection behavior, and the `X-Avo-Client` = `libPlatform` rule; the `Content-Type` callout now also forbids `text/plain` on v2. |
+| `SPEC.md` §5, §7.3.1 | `apiKey` / `env` are documented as header-carried (body copies retained but ignored); `libPlatform` MUST equal `X-Avo-Client`. |
+| `SPEC.md` §7.3.6 | The SHOULD-warn rule is replaced by a positive statement that a `null` `appVersion` is accepted and recorded as `unversioned`. |
+| `SPEC.md` §7.4 | Both `200` shapes (`success: true` / `success: false`) and the `400` error shape; a `200` without `samplingRate` leaves the rate unchanged. |
+| `SPEC.md` §7.7 | New bullet: v2 does not sample server-side; the SDK's own sampling obligations are unchanged. |
+| `SPEC.md` §4.2.1, §7.3.6, §12.7 | Gateway `options`: semantics, normalization, wire mapping, the four-cell `appVersion` table, per-event options inside a batch. |
+| `AGENTS.md` | Endpoint in section 1; new required-headers checklist item; AC-8 becomes "Wire endpoint, HTTPS, and required headers"; AC-26 / AC-27 for the gateway options (27 ACs). |
+| `openapi.yaml` (3.0.0) | Path `/inspector/v2/track`; `ApiKeyHeader` security scheme (`api-key`, in header) replacing `security: []` and the "auth is in the body" prose; REQUIRED `env` and `X-Avo-Client` header parameters; `400` documented as the missing/invalid-header response with an `{ok,error}` example; both `200` shapes as examples; `TrackResponse` gains `success` and no longer requires `samplingRate` (the drop shape omits it); `ErrorResponse` gains `ok`. |
+| `schemas/event-body.json`, `schemas/event-batch.json` | v2 in the titles/descriptions; `apiKey` / `env` noted as header-carried; the OPTIONAL `outputReference` / `originHint` and nullable `appVersion` (with the `appVersion: null` ⇒ `originHint` rule) unchanged from the 2.1.0 draft, minus the v1 caveats. |
+| `conformance/runner-contract.md` (1.1.0) | `AVO_INSPECTOR_MOCK_ENDPOINT` points at v2 and replaces the URL only; new normative "Required request headers" section (asserted on every captured request); placeholders are accepted as `expected_request_headers` values; recorded-headers example and the implementation checklist updated. The stdin/stdout envelope is unchanged — an existing harness needs no edit, only the SDK it drives. |
+| `conformance/runner/suite-runner.mjs` | Asserts the required headers on every captured request (non-empty `api-key`, valid `env`, non-empty `x-avo-client` equal to each event's `libPlatform`), and supports placeholder values in `expected_request_headers`. |
+| `conformance/wire-protocol/fixtures.json` | `wire-1` gains `expected_request_headers` pinning `api-key: "test-key"`, `env: "dev"` and `x-avo-client: "<sdk-platform>"`. `wire-9` – `wire-13` cover the gateway options (all-set, `originHint` without `appVersion` → `null`, override without `originHint`, whitespace-only → omitted + fallback, property-name collision). |
+| `conformance/batching/fixtures.json` | `batch-1` pins the same headers with `env: "staging"`, so a hardcoded `env` fails either it or `wire-1`. `batch-7` covers per-event `options` inside one batch. |
+| `conformance/runner/example-harness/{sdk,harness}.mjs` | The reference SDK posts to v2 and sends the three headers on every request (including gzipped bodies and the mock-endpoint override); it implements §4.2.1 / §7.3.6. **Also fixes a 2.0.0 regression:** the example SDK never sent `sessionId: ""`, so 10 of the fixtures failed on `main`; `npm run conformance:run` is green again at 36/36. |
+| `conformance/runner/coverage-map.json`, `conformance/**/README.md` | Spec version 3.0.0; new automated coverage entry for the required headers; fixture counts (36 total) and the gateway/`<absent>` entries. |
 
 ### Fixed
 
-Pre-existing artifact defects found while reviewing this release. None of them changes the 2.1.0
+Pre-existing artifact defects found while preparing this release. None of them changes the 3.0.0
 wire contract; each corrected an artifact that contradicted SPEC.md.
 
 | Artifact | Fix |
@@ -89,8 +151,9 @@ wire contract; each corrected an artifact that contradicted SPEC.md.
 | `conformance/batching/README.md` | The manual matrix instructed SDK authors to **re-queue** a batch after a transient network error or timeout, and labelled it SHOULD. SPEC.md §12.5 requires the opposite: on any send failure the batch MUST NOT be re-queued and its events are dropped, because the backend does not deduplicate on `messageId` and a retry would double-count. The parent `conformance/README.md` already stated this correctly. |
 | `openapi.yaml` | The `plainEvent` request-body example omitted `sessionId`, so it did not validate against the `EventBody` schema defined in the same document (2.0.0 made `sessionId` REQUIRED with `const: ""`). |
 | `openapi.yaml`, `schemas/event-body.json` | The `outputReference` / `originHint` pattern was `^\S(.*\S)?$`, which rejects internal line terminators because ECMA-262 `.` does not match them. §7.3.6 normalization is trim-only and preserves internal whitespace, so the schemas rejected output a conformant SDK would send. Now `^(?!\s)(?![\s\S]*\s$)[\s\S]+$`, which mirrors trim-only exactly. |
-| `openapi.yaml`, `schemas/event-body.json` | The §7.1 backend-compatibility note for `appVersion: null` existed only in SPEC.md prose; both machine-readable artifacts now repeat it next to the `appVersion` definition. |
 | `conformance/runner-contract.md` | The document header still declared `Version: 1.0.0` while its own Versioning section declared the contract at 1.1.0. |
+| `conformance/wire-protocol/fixtures.json` | The `wire-6` / `wire-7` notes cited the gzip rule as SPEC.md §7.3.7; it is §7.3.5. |
+| `SPEC.md` §7.3.1, §12.5 | Two sentences said "in v1" / "the deliberate v1 contract" meaning *spec* v1, which now reads as the v1 ingestion path. Both are stated without a version. |
 
 ## [2.0.0] - 2026-06-25 `[WIRE]`
 

@@ -11,9 +11,10 @@
 // generate your SDK from SPEC.md and prove it with the suite-runner.
 //
 // Implemented per SPEC.md: §4 (public API incl. §4.2.1 gateway options), §7 (wire
-// protocol incl. §7.3.5 gzip, §7.3.6 gateway fields + per-event appVersion, §7.5
-// error taxonomy + at-most-once), §8 (UUID v4 / ISO-8601), §9 (schema extraction),
-// §12 (batching / flush / destroy / maxQueueSize FIFO).
+// protocol incl. §7.2 required headers, §7.3.5 gzip, §7.3.6 gateway fields +
+// per-event appVersion, §7.5 error taxonomy + at-most-once), §8 (UUID v4 /
+// ISO-8601), §9 (schema extraction), §12 (batching / flush / destroy /
+// maxQueueSize FIFO).
 // =============================================================================
 
 import { randomUUID } from "node:crypto";
@@ -22,7 +23,7 @@ import { gzipSync } from "node:zlib";
 const HARNESS_CONTRACT_VERSION = "1.1.0";
 const LIB_VERSION = "1.1.0"; // plain SemVer, no suffix (SPEC §7.3.3)
 const LIB_PLATFORM = "node"; // <sdk-platform> (SPEC §7.3.1)
-const PROD_ENDPOINT = "https://api.avo.app/inspector/v1/track";
+const PROD_ENDPOINT = "https://api.avo.app/inspector/v2/track";
 const VALID_ENVS = new Set(["dev", "staging", "prod"]);
 const GZIP_THRESHOLD_BYTES = 1024; // SPEC §7.3.5
 const REQUEST_TIMEOUT_MS = 10_000; // SPEC §7.6
@@ -30,11 +31,6 @@ const DEFAULT_FLUSH_TIMEOUT_MS = 10_000; // SPEC §4.6
 
 // Process-wide logging flag (SPEC §4.4).
 let _shouldLog = false;
-
-// One-shot, process-wide latch for the SHOULD-level warning in SPEC §7.3.6:
-// originHint set without a usable appVersion => appVersion:null on the wire,
-// which the current v1 ingestion path drops (§7.1 backend note). Warn once.
-let _originHintWithoutAppVersionWarned = false;
 
 /**
  * SPEC §7.3.6 normalization for one TrackOptions value: strings are trimmed;
@@ -352,7 +348,8 @@ export class AvoInspector {
       // §4.2.1 / §7.3.6 gateway options: normalized per call, never affecting the
       // schema. Hint keys are OMITTED when absent (never null / ""); appVersion
       // follows the four-cell table (null only when originHint is set without a
-      // usable per-event appVersion).
+      // usable per-event appVersion). A null appVersion needs no special handling:
+      // /inspector/v2/track accepts it and records the observation as "unversioned".
       const outputReference = normalizeHint(options?.outputReference);
       const originHint = normalizeHint(options?.originHint);
       const perEventAppVersion = normalizeHint(options?.appVersion);
@@ -360,13 +357,6 @@ export class AvoInspector {
         originHint !== undefined
           ? (perEventAppVersion ?? null) // source-scoped: instance version never applies
           : (perEventAppVersion ?? this.appVersion); // unscoped: override or fall back
-      if (originHint !== undefined && resolvedAppVersion === null && _shouldLog && !_originHintWithoutAppVersionWarned) {
-        _originHintWithoutAppVersionWarned = true;
-        // Fixed message only — never log the option values (§7.3.6).
-        console.error(
-          "[Avo Inspector] originHint set without a usable appVersion; appVersion will be sent as null, which the current v1 ingestion path drops (SPEC §7.1 backend note).",
-        );
-      }
 
       // Build the self-contained wire body (§7.3) with the sampling-rate snapshot
       // in effect at enqueue time (§7.7). sessionId is REQUIRED and always "" for
@@ -469,9 +459,17 @@ export class AvoInspector {
     const json = JSON.stringify(batch);
     const rawBytes = Buffer.from(json, "utf8");
 
+    // §7.2 required headers. api-key and env are what /inspector/v2/track
+    // authenticates and routes on (the body copies are ignored); X-Avo-Client
+    // identifies the sender and is always this SDK's libPlatform, never per-call
+    // input. They are sent on every request, including when the endpoint is
+    // overridden by AVO_INSPECTOR_MOCK_ENDPOINT and including compressed bodies.
     const headers = {
       "Content-Type": "application/json",
       Accept: "application/json",
+      "api-key": this.apiKey,
+      env: this.env,
+      "X-Avo-Client": LIB_PLATFORM,
     };
 
     // §7.3.5 gzip when serialized body >= 1024 bytes (UTF-8 byte length).

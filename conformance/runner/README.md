@@ -46,8 +46,11 @@ The runner:
    `extractSchema` output, request count, request bodies (with `<uuid-v4>` / `<iso8601>` /
    `<semver>` / `<sdk-platform>` placeholder format-validation), `expected_request_bodies` as an
    **unordered multiset**, `expected_event_union_count`, `expected_unique_message_ids`, and
-   `expected_request_headers` (including `content-encoding: null` for "no gzip"), and the
-   `"<absent>"` placeholder (a key that MUST NOT be present — the omitted gateway fields).
+   `expected_request_headers` (literal, placeholder, or `null` for "header absent"), and the
+   `"<absent>"` placeholder (a key that MUST NOT be present — the omitted gateway fields). On
+   **every** captured request it also asserts the SPEC.md §7.2 required headers: a non-empty
+   `api-key`, an `env` of `dev` / `staging` / `prod`, and an `x-avo-client` equal to the
+   `libPlatform` of every event in that request.
 5. Prints a per-fixture `[PASS]` / `[FAIL]` line and a `N/36 PASS` summary. Exit code `0` only when
    every fixture passes; non-zero otherwise.
 

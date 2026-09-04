@@ -7,13 +7,14 @@ the runner contract — see [Multi-event sequence mode](../runner-contract.md#mu
 
 All fixtures use `env: "staging"` so `batchSize` is honored (under `env: "dev"` the SDK forces
 `batchSize = 1`, which disables batching). Like the wire-protocol suite, this suite requires the
-mock server and `AVO_INSPECTOR_MOCK_ENDPOINT`.
+mock server and `AVO_INSPECTOR_MOCK_ENDPOINT`, and every captured request must carry the required
+`api-key` / `env` / `X-Avo-Client` headers (SPEC.md §7.2).
 
 ## Fixtures
 
 | Fixture ID | Behavior verified |
 |---|---|
-| `batch-1` | **Size trigger + mixed-stream batch.** `batchSize: 3`; the 3rd `track` flushes exactly 3 events as one array (a 4th starts a fresh batch drained by `flush()`). A single batch MAY mix `streamId`/`eventName`. |
+| `batch-1` | **Size trigger + mixed-stream batch.** `batchSize: 3`; the 3rd `track` flushes exactly 3 events as one array (a 4th starts a fresh batch drained by `flush()`). A single batch MAY mix `streamId`/`eventName`. Also pins the SPEC.md §7.2 required headers on both captured batches with `env: "staging"` — `wire-1` pins the same header as `dev`, so a hardcoded value fails one of the two. |
 | `batch-2` | **`flush()` drains a partial batch.** `batchSize: 30`; two buffered events are force-sent as one batch by `flush()`. |
 | `batch-3` | **`destroy()` discards unsent.** Two buffered events, then `destroy()` → zero HTTP calls. |
 | `batch-4` | **`maxQueueSize` FIFO overflow.** `maxQueueSize: 2`; appending a 3rd event drops the oldest; the flushed batch is `[E2, E3]`. |

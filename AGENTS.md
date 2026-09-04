@@ -11,7 +11,8 @@ Section 2 and the checklist in Section 3.
 Generate a `<language>` Inspector SDK — a class named `AvoInspector` (or the
 language-idiomatic equivalent) — that conforms to the normative contract in `SPEC.md`.
 The SDK sends analytics event schemas to the Avo Inspector HTTP API at
-`POST https://api.avo.app/inspector/v1/track`. It is server-side only: no browser,
+`POST https://api.avo.app/inspector/v2/track`, identifying itself with the REQUIRED `api-key`,
+`env` and `X-Avo-Client` request headers (SPEC.md §7.2). It is server-side only: no browser,
 no localStorage, no session management, no user-facing UI concerns. The SDK MUST
 extract a type schema from arbitrary event property maps and POST that schema to
 the Inspector API, handling sampling, batching, and graceful error
@@ -89,9 +90,16 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 
 ### Wire Protocol
 
-- [ ] `trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v1/track` (HTTPS, port 443)
+- [ ] `trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v2/track` (HTTPS, port 443)
   unless `AVO_INSPECTOR_MOCK_ENDPOINT` is set, in which case it MUST POST to that URL
   verbatim (SPEC.md §7.1).
+- [ ] Every request carries the REQUIRED headers `api-key` (the `apiKey` constructor option),
+  `env` (exactly `dev` / `staging` / `prod`), `X-Avo-Client` (the SDK's `libPlatform` value, e.g.
+  `node`, `ruby`, `csharp`, `go` — identical on every request) and `Content-Type: application/json`
+  — including when the body is gzipped, and including when `AVO_INSPECTOR_MOCK_ENDPOINT` overrides
+  the URL. The endpoint reads the API key and env from these headers, not from the body; a missing
+  or invalid `api-key` / `env` header is answered `400 {"ok":false,"error":"..."}` and no event is
+  ingested. `text/plain` MUST NOT be used as the `Content-Type` (SPEC.md §7.2).
 - [ ] Every outgoing request body is a JSON array of one or more event objects (SPEC.md §7.3). Each
   element MUST be fully self-contained (own `messageId`/`createdAt`/`streamId`/`eventName`/
   `eventProperties`); a batch MAY mix `streamId`/`eventName` across elements (SPEC.md §7.3, §12).
@@ -111,7 +119,7 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   schema, never sent as `null` or `""` (SPEC.md §7.3.6).
 - [ ] `trackSchemaFromEvent` accepts an OPTIONAL trailing `options` parameter (or overload) —
   `{ outputReference?, originHint?, appVersion? }` — without breaking existing call sites; a call
-  without `options` produces a body identical to the pre-2.1.0 body (SPEC.md §4.2.1).
+  without `options` produces a body identical to the 2.0.0 body (SPEC.md §4.2.1).
 - [ ] Each option value is normalized independently: trimmed; absent / `null` / empty /
   whitespace-only (and, in dynamically-typed languages, non-string) values are treated as absent.
   For `outputReference` and `originHint`, absent means the wire key is OMITTED. `appVersion` is
@@ -119,9 +127,9 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   (SPEC.md §7.3.6).
 - [ ] Wire `appVersion` follows the four-cell rule: `options.appVersion` when provided; a literal
   JSON `null` when `originHint` is set and no usable `options.appVersion` was given; otherwise the
-  constructor `version`. The key is always present. SHOULD warn once per process (without logging
-  the values) when `originHint` is set and `appVersion` resolves to `null` (SPEC.md §7.3.6, §7.1
-  backend note).
+  constructor `version`. The key is always present. A `null` `appVersion` is accepted by the
+  endpoint and recorded as `unversioned`, so the SDK MUST NOT suppress, substitute, or drop the
+  event, and no warning is required (SPEC.md §7.3.6).
 - [ ] `options` never touches `extractSchema`: an event property literally named
   `outputReference` / `originHint` / `appVersion` stays in `eventProperties` (`wire-13`); options
   are per event and two calls for the same event with different `outputReference` are both sent
@@ -296,10 +304,14 @@ as a static/package-level variable.
 language invariant and is intentionally excluded from the universal fixtures — the JS/TS reference
 parser emits `"int"`; see SPEC.md §9.3.1.)
 
-### AC-8 — Wire endpoint and HTTPS (SPEC.md §7.1)
+### AC-8 — Wire endpoint, HTTPS, and required headers (SPEC.md §7.1, §7.2)
 
-`trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v1/track` over HTTPS.
-When `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST POST to that URL instead.
+`trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v2/track` over HTTPS.
+When `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST POST to that URL instead — the override
+replaces the URL only. Every request (overridden or not, compressed or not) carries `api-key`,
+`env`, `X-Avo-Client` and `Content-Type: application/json`; `X-Avo-Client` equals the SDK's
+`libPlatform` and never varies per call. A missing or invalid `api-key` / `env` header is answered
+`400 {"ok":false,"error":"..."}` and is handled as an ordinary non-200 (resolve, no retry).
 
 ### AC-9 — Complete wire body fields (SPEC.md §7.3)
 
@@ -406,11 +418,12 @@ batch body per the 1024-byte rule.
 `outputReference`, `originHint`, and `appVersion`. `outputReference` / `originHint` are sent as
 top-level siblings of `eventProperties` — trimmed, and OMITTED entirely (never `null` / `""`) when
 absent, empty, or whitespace-only. They never enter the schema, and `options` are resolved per call
-(`wire-9` – `wire-13`, `batch-7`). A call without `options` produces the pre-2.1.0 body.
+(`wire-9` – `wire-13`, `batch-7`). A call without `options` produces the 2.0.0 body.
 
 ### AC-27 — Per-event `appVersion` rule (SPEC.md §7.3.1, §7.3.6)
 
 Wire `appVersion` is `options.appVersion` when provided (trimmed); a literal JSON `null` when
 `originHint` is set and no usable `options.appVersion` was given; otherwise the constructor
-`version`. The key is always present. When it resolves to `null`, the SDK SHOULD log a one-time
-warning that never includes the option values (`wire-10`, `wire-12`, `wire-13`).
+`version`. The key is always present. A resolved `null` is a valid observation — the endpoint
+records it as `unversioned` — so the SDK sends it unchanged and neither drops the event nor is
+required to warn (`wire-10`, `wire-12`, `wire-13`).

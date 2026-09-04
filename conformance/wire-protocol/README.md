@@ -7,7 +7,7 @@ and correctly handles `streamId` edge cases.
 
 | Fixture ID | Description |
 |---|---|
-| `wire-1` | Basic event send — happy path with primitive properties |
+| `wire-1` | Basic event send — happy path with primitive properties, plus the SPEC.md §7.2 required request headers (`api-key`, `env`, `X-Avo-Client`) |
 | `wire-2` | Sampling drop — `samplingRate = 0.0` produces zero HTTP calls |
 | `wire-3` | Non-200 response — SDK resolves (does not reject) |
 | `wire-4` | `streamId` with colons — verbatim passthrough as `streamId` (spec Edge Case 9) |
@@ -29,10 +29,25 @@ and correctly handles `streamId` edge cases.
 > remaining SHOULD-level behaviors (time/idle flush, transient re-queue) are in the manual matrix in
 > [`../README.md`](../README.md).
 
+## Required Request Headers
+
+Every request to the Inspector API carries `api-key`, `env` and `X-Avo-Client` (SPEC.md §7.2). The
+suite runner asserts all three on **every** captured request in every suite, whether or not the
+fixture declares an `expected_request_headers` block — `api-key` must be a non-empty string, `env`
+must be exactly `dev` / `staging` / `prod`, and `x-avo-client` must be non-empty **and** equal to
+the `libPlatform` of every event in that request's body. See
+[runner-contract.md](../runner-contract.md#required-request-headers).
+
+`wire-1` additionally pins the exact values: `api-key: "test-key"` and `env: "dev"` come from its
+`constructor` block, and `x-avo-client` is format-validated with `"<sdk-platform>"` because the
+token differs per SDK. `batch-1` pins the same headers with `env: "staging"`, so an SDK that
+hardcodes either value fails one of the two fixtures.
+
 ## How It Works
 
 For wire-protocol fixtures, the suite runner starts a local HTTP mock server before invoking the harness
-and passes its URL via the `AVO_INSPECTOR_MOCK_ENDPOINT` environment variable.
+and passes its URL via the `AVO_INSPECTOR_MOCK_ENDPOINT` environment variable. The override replaces
+the request URL only — the SDK MUST still send every header above.
 
 ### `AVO_INSPECTOR_MOCK_ENDPOINT`
 
@@ -75,6 +90,10 @@ regardless of the regex rule.
 | `"<sdk-platform>"` | `libPlatform` | Any non-empty string identifying the SDK language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). Suite runner accepts any non-empty value. |
 | `"<absent>"` | any key (`outputReference` / `originHint`) | The key MUST NOT be present on the captured event at all — not `null`, not `""`. Asserts the omission rule of SPEC.md §7.3.6; the runner otherwise tolerates extra keys, so omission needs an explicit placeholder. |
 
+The first four placeholders may also appear as `expected_request_headers` values, where they
+validate a header by the same rule (`"<sdk-platform>"` for `x-avo-client`). `"<absent>"` has no
+meaning for a header — assert an absent header with `null`.
+
 The four format-validated fields are **required** on every event sent. A missing field is a
 conformance failure. `"<absent>"` is the inverse: presence is the failure. A literal `null` expected
 value (e.g. `"appVersion": null` in `wire-10`) requires a literal JSON `null` on the wire.
@@ -101,7 +120,7 @@ value (e.g. `"appVersion": null` in `wire-10`) requires a literal JSON `null` on
   "precondition": { "samplingRate": 1.0 },
   "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
   "expected_request_body": [ { "...": "..." } ],
-  "expected_request_headers": { "content-encoding": null },
+  "expected_request_headers": { "api-key": "test-key", "env": "dev", "x-avo-client": "<sdk-platform>", "content-encoding": null },
   "expected_request_count": 1,
   "expected_promise_outcome": "resolve | reject",
   "expected_resolve_value": [],
@@ -121,7 +140,7 @@ value (e.g. `"appVersion": null` in `wire-10`) requires a literal JSON `null` on
 | `precondition` | NO | State to establish before invoking the operation. Harness MUST apply `samplingRate` override via internal setter or test hook before calling the operation. |
 | `mock_response` | NO | Response the mock server returns. `null` means no HTTP call is expected — the mock server is still started and the SDK still pointed at it, so any erroneous send is captured locally (fail-closed) and the runner asserts zero requests. |
 | `expected_request_body` | NO | Array of expected JSON request bodies. Use when one or more HTTP calls are expected. |
-| `expected_request_headers` | NO | Object asserting request headers (case-insensitive names). A string value means the header MUST be present and equal; `null` means the header MUST be absent. See [runner-contract.md](../runner-contract.md#expected_request_headers-assertions). |
+| `expected_request_headers` | NO | Object asserting request headers (case-insensitive names). A literal string means the header MUST be present and equal; a placeholder (e.g. `"<sdk-platform>"`) validates by format; `null` means the header MUST be absent. Independently of this field, the runner always asserts the SPEC.md §7.2 required headers on every captured request. See [runner-contract.md](../runner-contract.md#expected_request_headers-assertions). |
 | `expected_request_count` | NO | Expected number of HTTP calls. `0` asserts no HTTP call was made. When `expected_request_body` is present, count is implied by array length. |
 | `expected_promise_outcome` | YES | `"resolve"` or `"reject"`. |
 | `expected_resolve_value` | NO | Expected resolved value. May be omitted if the resolved value is unimportant. |
@@ -142,7 +161,9 @@ See [`conformance/runner-contract.md`](../runner-contract.md) for the full harne
 An SDK **passes** the wire-protocol suite when all 13 fixtures pass:
 
 - `wire-1`: The harness exits with code `0` and the mock server recorded exactly 1 request matching the
-  expected body (with format validation applied to placeholder fields).
+  expected body (with format validation applied to placeholder fields) and carrying
+  `api-key: test-key`, `env: dev` and a non-empty `X-Avo-Client` equal to the event's `libPlatform`
+  (SPEC.md §7.2).
 - `wire-2`: The harness exits with code `0` and the mock server recorded exactly 0 requests.
 - `wire-3`: The harness exits with code `0` (promise resolved, not rejected).
 - `wire-4`: The harness exits with code `0` and the mock server recorded a request with `streamId`

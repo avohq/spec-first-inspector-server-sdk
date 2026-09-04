@@ -13,6 +13,11 @@
     ],
     "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },
     "expected_request_count": 2,
+    "expected_request_headers": {
+      "api-key": "test-key",
+      "env": "staging",
+      "x-avo-client": "<sdk-platform>"
+    },
     "expected_request_bodies": [
       [
         { "apiKey": "test-key", "appName": "TestApp", "appVersion": "1.0.0", "libVersion": "<semver>", "env": "staging", "libPlatform": "<sdk-platform>", "messageId": "<uuid-v4>", "streamId": "s1", "sessionId": "", "createdAt": "<iso8601>", "samplingRate": 1.0, "type": "event", "eventName": "E1", "eventProperties": [ { "propertyName": "a", "propertyType": "int" } ] },
@@ -23,7 +28,7 @@
         { "apiKey": "test-key", "appName": "TestApp", "appVersion": "1.0.0", "libVersion": "<semver>", "env": "staging", "libPlatform": "<sdk-platform>", "messageId": "<uuid-v4>", "streamId": "s2", "sessionId": "", "createdAt": "<iso8601>", "samplingRate": 1.0, "type": "event", "eventName": "E4", "eventProperties": [ { "propertyName": "d", "propertyType": "int" } ] }
       ]
     ],
-    "notes": "Proves the size trigger (call 1 fires at the 3rd enqueue and carries exactly 3 events, not 4) and that a single batch MAY mix streamId (s1/s2) and eventName. Each event is self-contained. The trailing flush() drains the 4th event and awaits all in-flight sends so the captured set is deterministic (SPEC.md §12.3, §12.4)."
+    "notes": "Proves the size trigger (call 1 fires at the 3rd enqueue and carries exactly 3 events, not 4) and that a single batch MAY mix streamId (s1/s2) and eventName. Each event is self-contained. The trailing flush() drains the 4th event and awaits all in-flight sends so the captured set is deterministic (SPEC.md §12.3, §12.4). expected_request_headers is asserted against BOTH captured batches and pins env: 'staging' — wire-1 pins env: 'dev' on the same header, so an SDK that hardcodes the value fails one of the two (SPEC.md §7.2)."
   },
   {
     "fixture_id": "batch-2",

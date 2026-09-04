@@ -37,9 +37,9 @@ machine-readable fixtures.
 ### wire-protocol
 
 Tests the full `trackSchemaFromEvent` wire behavior: correct HTTP body shape, field values,
-format-validated fields (`messageId`, `createdAt`, `libVersion`, `libPlatform`), sampling drop,
-and non-200 response handling. Requires `AVO_INSPECTOR_MOCK_ENDPOINT` to be set before
-invoking the harness.
+format-validated fields (`messageId`, `createdAt`, `libVersion`, `libPlatform`), the required
+request headers (`api-key`, `env`, `X-Avo-Client` — SPEC.md §7.2), sampling drop, and non-200
+response handling. Requires `AVO_INSPECTOR_MOCK_ENDPOINT` to be set before invoking the harness.
 
 See `wire-protocol/README.md` for details and `wire-protocol/fixtures.json` for the
 machine-readable fixtures (wire-1 through wire-13). `wire-8` is the batching no-premature-flush

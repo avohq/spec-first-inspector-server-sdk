@@ -1,6 +1,6 @@
 {
   "$comment": "Machine-readable map of SPEC.md / runner-contract.md behaviors to the conformance fixture(s) that gate them. \"automated\" entries are asserted by `npm run conformance:run` (the suite-runner drives the harness and asserts captured mock traffic). \"manual\" entries are NOT covered by the 36 fixtures and must be verified out-of-band; they include BOTH SHOULD-level behaviors (e.g. time/idle flush) AND MUST-level requirements that need a controllable clock, a connection-drop mock, or a non-fixture input (e.g. the prod fail-closed mock-endpoint gate, constructor validation, process-wide logging state, typed 0.0->float). See conformance/README.md.",
-  "spec_version": "2.1.0",
+  "spec_version": "3.0.0",
   "runner_contract_version": "1.1.0",
   "total_fixtures": 36,
   "automated": [
@@ -197,6 +197,18 @@
       ]
     },
     {
+      "behavior": "Required request headers on every captured request: api-key non-empty, env one of dev/staging/prod, X-Avo-Client non-empty and equal to the libPlatform of every event in that request",
+      "spec": [
+        "SPEC.md §7.2",
+        "runner-contract.md Required request headers"
+      ],
+      "fixtures": [
+        "wire-1",
+        "batch-1"
+      ],
+      "$note": "The runner asserts these on EVERY captured request in every suite, not only on the two fixtures that declare expected_request_headers. wire-1 pins the exact values api-key=test-key / env=dev and batch-1 pins env=staging, so an SDK that hardcodes either value fails one of them; X-Avo-Client is format-validated with <sdk-platform> because the token differs per SDK."
+    },
+    {
       "behavior": "env-gated mock endpoint honored for dev/staging (fail-closed for prod); AVO_INSPECTOR_MOCK_ENDPOINT used as-is",
       "spec": [
         "SPEC.md §7.1",
@@ -206,7 +218,7 @@
         "wire-1",
         "batch-1"
       ],
-      "$note": "All fixtures construct env dev/staging, so the override is honored. The prod fail-closed branch is a security MUST verified by SDK unit tests, not by a fixture (no prod fixture exists)."
+      "$note": "All fixtures construct env dev/staging, so the override is honored, and the override replaces the URL only — the required headers are still sent and still asserted. The prod fail-closed branch is a security MUST verified by SDK unit tests, not by a fixture (no prod fixture exists)."
     },
     {
       "behavior": "Batching: single event with batchSize > 1 is buffered, not sent before flush (zero HTTP calls)",
@@ -359,7 +371,7 @@
       ]
     },
     {
-      "behavior": "Backward compatibility: a call without options (all pre-2.1.0 fixtures) carries no gateway keys and the constructor appVersion",
+      "behavior": "Backward compatibility: a call without options (every fixture that omits it) carries no gateway keys and the constructor appVersion",
       "spec": [
         "SPEC.md §4.2.1"
       ],
@@ -377,15 +389,6 @@
         "SPEC.md §7.3.6 normalization rule 3"
       ],
       "reason": "Not expressible as a universal fixture: statically-typed harnesses cannot receive a non-string in a string-typed option. Verify via the SDK's own unit tests in dynamically-typed languages.",
-      "fixtures": []
-    },
-    {
-      "behavior": "One-time warning when originHint is set without a usable appVersion (SHOULD); the warning never includes option values",
-      "spec": [
-        "SPEC.md §7.3.6",
-        "SPEC.md §7.1 backend note"
-      ],
-      "reason": "Logging is observed on stderr, not asserted by the fixtures. Verify via the SDK's own unit tests.",
       "fixtures": []
     },
     {
