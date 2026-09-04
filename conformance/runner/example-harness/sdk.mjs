@@ -485,12 +485,27 @@ export class AvoInspector {
       "X-Avo-Client": LIB_PLATFORM,
     };
 
-    // §7.2: refuse to transmit any header value containing CR, LF or NUL. The
-    // constructor already rejects such an apiKey, so this is the deliberate
-    // second guard the spec requires: it protects the wire even if a value
-    // reaches the header map another way. On a violation the batch is dropped and
-    // logged (§7.5) — never stripped, escaped or substituted, since silently
-    // rewriting an API key would send a different key than the caller configured.
+    // §7.3.5 gzip when serialized body >= 1024 bytes (UTF-8 byte length).
+    let payload = rawBytes;
+    if (rawBytes.length >= GZIP_THRESHOLD_BYTES) {
+      try {
+        payload = gzipSync(rawBytes);
+        headers["Content-Encoding"] = "gzip";
+      } catch {
+        payload = rawBytes; // fallback to uncompressed (§7.3.5)
+      }
+    }
+    headers["Content-Length"] = String(payload.length);
+
+    // §7.2: refuse to transmit any header value containing CR, LF or NUL. Placed
+    // after the FINAL header set is assembled, so Content-Encoding and
+    // Content-Length are covered too — the rule is about every header value, not
+    // only the caller-supplied one. The constructor already rejects such an
+    // apiKey; this is the deliberate second guard the spec requires, protecting
+    // the wire even if a value reaches the header map another way. On a violation
+    // the batch is dropped and logged (§7.5) — never stripped, escaped or
+    // substituted, since silently rewriting an API key would send a different key
+    // than the caller configured.
     const unsafeHeader = Object.entries(headers).find(
       ([, value]) => typeof value === "string" && HEADER_CONTROL_CHARS.test(value),
     );
@@ -507,18 +522,6 @@ export class AvoInspector {
       // the extracted schema (§7.5). "non200" would wrongly resolve it with [].
       return { status: "error" };
     }
-
-    // §7.3.5 gzip when serialized body >= 1024 bytes (UTF-8 byte length).
-    let payload = rawBytes;
-    if (rawBytes.length >= GZIP_THRESHOLD_BYTES) {
-      try {
-        payload = gzipSync(rawBytes);
-        headers["Content-Encoding"] = "gzip";
-      } catch {
-        payload = rawBytes; // fallback to uncompressed (§7.3.5)
-      }
-    }
-    headers["Content-Length"] = String(payload.length);
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
