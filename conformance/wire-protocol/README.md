@@ -162,7 +162,7 @@ value (e.g. `"appVersion": null` in `wire-10`) requires a literal JSON `null` on
 | `description` | YES | Human-readable description. |
 | `constructor` | YES | Options passed verbatim to the SDK constructor. |
 | `operation` | YES | SDK method to invoke: `"trackSchemaFromEvent"`. |
-| `input` | YES | Operation-specific input. `streamId` is optional; when absent, `streamId` MUST be `""` in the wire body. `options` is optional (SPEC.md §4.2.1); when present the harness passes it verbatim as the fourth argument, when absent the harness omits the argument. |
+| `input` | YES | Operation-specific input. `streamId` is optional; when absent, `streamId` MUST be `""` in the wire body. `options` is optional (SPEC.md §4.2.1); when present the harness passes the three values verbatim in its SDK's own call-site shape — the object as the fourth argument for a grouped SDK, each key as its matching top-level parameter for a flattened one — and when absent it passes none of them. |
 | `precondition` | NO | State to establish before invoking the operation. Harness MUST apply `samplingRate` override via internal setter or test hook before calling the operation. |
 | `mock_response` | NO | Response the mock server returns. `null` means no HTTP call is expected — the mock server is still started and the SDK still pointed at it, so any erroneous send is captured locally (fail-closed) and the runner asserts zero requests. |
 | `expected_request_body` | NO | Array of expected JSON request bodies. Use when one or more HTTP calls are expected. |

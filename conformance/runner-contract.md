@@ -662,8 +662,9 @@ submitting conformance results.
       concurrently (real parallelism where the runtime supports it), and joins all of them before
       resolving the step (batch-6 concurrency fixture).
 - [ ] Harness passes `input.options` (single-event mode) and `step.options` (`track` steps) through
-      to `trackSchemaFromEvent` verbatim, and omits the argument entirely when the fixture has no
-      `options` (wire-9 through wire-13, batch-7).
+      to `trackSchemaFromEvent` verbatim — as the fourth argument for an SDK that groups the three,
+      or as the matching top-level parameters for one that flattens them (SPEC.md §4.2.1) — and
+      passes none of them when the fixture has no `options` (wire-9 through wire-13, batch-7).
 - [ ] Harness does not persist state between invocations — each run constructs a fresh
       `AvoInspector` instance.
 
@@ -705,10 +706,11 @@ in `expected_request_headers`, and the always-on required-header assertions.
   **SDK it drives** must send all five asserted headers, or every request-making fixture fails.
 - **Harness edit REQUIRED.** `options` is a new optional field on the input envelope
   (`input.options` in single-event mode, `step.options` on a `track` step). A `1.0.0` harness
-  ignores it and calls `trackSchemaFromEvent` with at most three arguments, so it cannot pass
-  `wire-9` – `wire-13` or `batch-7`. Forward it verbatim as the fourth argument per
-  [`operation` values and `input` shapes](#operation-values-and-input-shapes); the implementation
-  checklist item is below.
+  ignores it and never supplies the three coordinates, so it cannot pass `wire-9` – `wire-13` or
+  `batch-7`. Forward the values verbatim in whichever call-site shape the SDK implements — the
+  object as the fourth argument, or each key as its matching top-level parameter (SPEC.md §4.2.1)
+  — per [`operation` values and `input` shapes](#operation-values-and-input-shapes); the
+  implementation checklist item is below.
 
 The output envelope and the exit-code semantics are unchanged, so no `1.0.0` behavior is
 invalidated — this is why the bump is MINOR and not MAJOR. `1.0.0` was
