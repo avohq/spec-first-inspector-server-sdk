@@ -79,6 +79,7 @@ paths:
                     libPlatform: "ruby"
                     messageId: "550e8400-e29b-41d4-a716-446655440000"
                     streamId: ""
+                    sessionId: ""
                     createdAt: "2026-05-25T12:00:00.000Z"
                     samplingRate: 1.0
                     type: "event"
@@ -175,6 +176,9 @@ components:
           - required: [userId]
       # SPEC.md §7.3.6: appVersion may be null ONLY when originHint is present (source-scoped
       # event with no usable per-event version); without originHint the constructor version is sent.
+      # SPEC.md §7.1 backend note: the v1 ingestion path currently DROPS null-appVersion events
+      # while still returning 200, so a v1 gateway integration SHOULD pair originHint with a
+      # non-blank options.appVersion. The wire contract below is unchanged by that backend gap.
       if:
         required: [appVersion]
         properties:
@@ -212,6 +216,12 @@ components:
             Per-event application version. The `version` constructor option unless overridden by
             `options.appVersion`; a literal JSON `null` ONLY when `options.originHint` is set and
             no usable `options.appVersion` was provided (SPEC.md §7.3.6). The key is always present.
+            Backend compatibility (informative, as of 2026-09-03): the `/inspector/v1/track` fast
+            parser drops events whose `appVersion` is `null` and still returns `200`, while
+            `/inspector/gtm/v1/track` and `/inspector/v2/track` tolerate it. Until that gap closes a
+            gateway-scoped integration on v1 SHOULD pair `originHint` with a non-blank
+            `options.appVersion`, and the SDK SHOULD emit a one-time warning whenever it resolves
+            `appVersion` to `null` (SPEC.md §7.1, §7.3.6).
         libVersion:
           type: string
           pattern: "^\\d+\\.\\d+\\.\\d+$"

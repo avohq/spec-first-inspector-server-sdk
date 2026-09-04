@@ -1,6 +1,6 @@
 # Conformance Harness Runner Contract
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Status:** Normative
 
 > The key words "MUST", "MUST NOT", "REQUIRED", "SHALL", "SHOULD", "SHOULD NOT",
