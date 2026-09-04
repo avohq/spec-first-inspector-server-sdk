@@ -78,8 +78,11 @@ const concretizeBody = (body) => {
   return out;
 };
 
-// Validate one fixture event object against schemas/event-body.json. Returns
-// nothing; records a failure through fail() so the exit code reflects it.
+// Validate one fixture event object against schemas/event-body.json. Reports its
+// own failures rather than routing through fail(), because both branches append
+// context fail() cannot express: what was found instead of an object, and which
+// forbidden field tripped the schema. Both increment `failures`, so the exit code
+// reflects them either way.
 const checkBody = (suite, fixtureId, body, where) => {
   if (body === null || typeof body !== "object" || Array.isArray(body)) {
     failures += 1;
