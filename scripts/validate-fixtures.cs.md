@@ -11,16 +11,38 @@ Node.js ES module (`.mjs`). Depends on `ajv` (draft 2020-12 build, imported from
 ## Functional requirements
 
 - Registers every `*.json` under `schemas/` with Ajv keyed by its `$id`, so relative `$ref`s (e.g. `event-property-plain.json` → `schema-entry.json`) resolve.
-- Resolves two validators: `SchemaEntry` (from `schema-entry.json`) and `EventPropertyPlain` (from `event-property-plain.json`).
-- **schema-extraction suite** — validates that every element of each fixture's `expected[]` array is a valid `SchemaEntry`.
-- **wire-protocol and error-handling suites** — validates that every `eventProperties[]` element inside each `expected_request_body[]` entry is a valid `EventPropertyPlain`. **Deliberately does NOT validate the full event body**, whose `messageId` / `createdAt` are placeholder values that would not satisfy the schemas.
-- **batching suite** — validates that every `eventProperties[]` element of every event in every batch of `expected_request_bodies[]` is a valid `EventPropertyPlain`.
+- Resolves three validators: `SchemaEntry` (from `schema-entry.json`), `EventPropertyPlain`
+  (from `event-property-plain.json`) and `EventBody` (from `event-body.json`).
+- Derives the forbidden wire fields from `event-body.json`'s own `not.anyOf` clauses rather than
+  restating them, so that list cannot drift from the schema.
+- **schema-extraction suite** — validates that every element of each fixture's `expected[]` array
+  is a valid `SchemaEntry`.
+- **wire-protocol and error-handling suites** — validates that every `expected_request_body[]`
+  entry is a valid `EventBody`, and that every `eventProperties[]` element inside it is a valid
+  `EventPropertyPlain`.
+- **batching suite** — validates that every event in every batch of `expected_request_bodies[]`
+  is a valid `EventBody`, and that every `eventProperties[]` element of every such event is a
+  valid `EventPropertyPlain`.
+- **Placeholder handling for the body check.** Fixture bodies carry marker strings where a real
+  SDK emits a value the fixture cannot predict. Before validating, the script substitutes the
+  weakest value satisfying both the marker's runtime predicate and the schema — `<uuid-v4>`,
+  `<iso8601>`, `<semver>` and `<sdk-platform>` — and DROPS any key whose value is `<absent>`,
+  since that marker asserts the key must not appear on the wire (SPEC.md §7.3.6).
+- **What the body check therefore does and does not cover**, stated so no reader assumes more:
+  it checks which keys are present, that no required key is missing, that no forbidden key
+  appears, and the type / format / enum of every non-placeholder value. It does NOT check the
+  four placeholder values themselves — those are literal markers, and the suite runner asserts
+  their real values against the captured request at run time.
 - Absent arrays are coerced to empty via `?? []`, so a fixture lacking the relevant field is skipped, not failed.
 
 ## Non-functional requirements
 
 - Ajv configured with `strict: false` and `allErrors: true` (collects all errors per element rather than failing fast).
-- On any failure: emits one `[FAIL] <suite> / <fixture_id> — <where>: <ajv error text>` line to stderr per offending element, then a summary count, and exits with code 1.
+- On any failure: emits one `[FAIL] <suite> / <fixture_id> — <where>: <ajv error text>` line to
+  stderr per offending element, then a summary count, and exits with code 1. An `EventBody`
+  failure caused by a forbidden field appends `(forbidden field present: <name>)`, because Ajv
+  reports a failed `not` only as "data must NOT be valid", which does not say which field
+  caused it.
 - On full success: prints `All fixtures validate against schemas/ ✓` and exits 0.
 - Pure read-only over the repo tree; no writes, no network.
 
