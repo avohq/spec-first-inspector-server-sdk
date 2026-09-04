@@ -65,7 +65,14 @@ the request URL only — the SDK MUST still send every header above.
 ### `AVO_INSPECTOR_MOCK_ENDPOINT`
 
 When this environment variable is set, the SDK under test **MUST** send all HTTP calls to this URL
-instead of `https://api.avo.app`. The mock server:
+instead of `https://api.avo.app` — **except when the instance was constructed with `env: "prod"`,
+which MUST ignore the variable unconditionally.** That gate is fail-closed by design (SPEC.md §7.1):
+without it, anyone able to set the variable could redirect traffic to an arbitrary endpoint and
+capture the `api-key` the SDK sends on every request. Every fixture constructs `dev` or `staging`,
+so the gate costs the suite nothing. The override replaces the URL only — all five §7.2 headers are
+still sent.
+
+The mock server:
 
 - Records incoming `POST` requests (headers + body).
 - Returns the configurable response specified in the fixture's `mock_response` field.
@@ -73,6 +80,12 @@ instead of `https://api.avo.app`. The mock server:
 
 After the harness exits, the suite runner calls `GET /requests` and compares the captured request bodies
 against `expected_request_body` in the fixture.
+
+Each harness process has a wall-clock budget (60 s by default,
+`AVO_CONFORMANCE_HARNESS_TIMEOUT_MS` to override). A harness that has not exited by then is
+terminated and its fixture fails with `harness timed out`, so one hung process cannot stall the
+run — the mock records a request only when the request stream ends, so an SDK that sends a
+`Content-Length` larger than its body would otherwise leave the server waiting forever.
 
 When a recorded request carries `Content-Encoding: gzip` (SPEC.md §7.3.5), the mock server MUST gunzip the
 raw body bytes before parsing the JSON, so the captured `body` is always the decompressed event array. A

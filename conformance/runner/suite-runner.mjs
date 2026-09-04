@@ -78,13 +78,27 @@ function parseArgs(argv) {
 // ---------------------------------------------------------------------------
 // Harness invocation: write one JSON line to stdin, read one JSON line of stdout.
 // ---------------------------------------------------------------------------
+
+// Wall-clock budget for one harness process. Well above the SDK's own 10s request
+// timeout and 10s flush timeout (SPEC §7.6, §4.6) plus the concurrency fan-out in
+// batch-6, so a conformant harness never approaches it. It exists so that a
+// harness — or an SDK — that hangs fails ONE fixture instead of hanging the suite:
+// the mock records a request only on the request stream's `end` event, so an SDK
+// that sends a Content-Length larger than its body leaves the server waiting for
+// bytes that never arrive. Override with AVO_CONFORMANCE_HARNESS_TIMEOUT_MS.
+const HARNESS_TIMEOUT_MS = Number(process.env.AVO_CONFORMANCE_HARNESS_TIMEOUT_MS) || 60_000;
+// Grace period between SIGTERM and SIGKILL for a harness that ignores SIGTERM.
+const HARNESS_SIGKILL_GRACE_MS = 2_000;
+
 /**
  * Spawn the harness subprocess for one fixture, write the input envelope as a
  * single JSON line to stdin, and collect its stdout/stderr (runner-contract).
+ * Terminates the child and resolves with `timedOut: true` if it has not exited
+ * within HARNESS_TIMEOUT_MS, so one hung fixture cannot stall the whole run.
  * @param {string} harnessCmd - The harness command to run (whitespace-tokenized).
  * @param {Object} envelope - The fixture input envelope written to the harness stdin.
  * @param {Object} extraEnv - Extra environment variables (e.g. AVO_INSPECTOR_MOCK_ENDPOINT).
- * @returns {Promise<{ exitCode: number, stdout: string, stderr: string, spawnError?: string }>}
+ * @returns {Promise<{ exitCode: number, stdout: string, stderr: string, spawnError?: string, timedOut?: boolean }>}
  *   Resolves (never rejects) with the captured process result.
  */
 function runHarness(harnessCmd, envelope, extraEnv) {
@@ -101,14 +115,56 @@ function runHarness(harnessCmd, envelope, extraEnv) {
 
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let killTimer = null;
+    let timedOut = false;
+
+    /** Resolve exactly once and clear both timers. */
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutTimer);
+      if (killTimer) clearTimeout(killTimer);
+      resolve(result);
+    };
+
+    const timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      // Escalate if the child ignores SIGTERM, then report regardless.
+      killTimer = setTimeout(() => {
+        child.kill("SIGKILL");
+        settle({
+          exitCode: -1,
+          stdout,
+          stderr,
+          timedOut: true,
+          spawnError: `harness did not exit within ${HARNESS_TIMEOUT_MS}ms (SIGKILL sent)`,
+        });
+      }, HARNESS_SIGKILL_GRACE_MS);
+    }, HARNESS_TIMEOUT_MS);
+    // Never let the timers hold the event loop open on their own.
+    timeoutTimer.unref?.();
+
     child.stdout.on("data", (d) => (stdout += d.toString()));
     child.stderr.on("data", (d) => (stderr += d.toString()));
 
     child.on("error", (err) => {
-      resolve({ exitCode: -1, stdout, stderr, spawnError: err.message });
+      settle({ exitCode: -1, stdout, stderr, spawnError: err.message });
     });
-    child.on("close", (code) => {
-      resolve({ exitCode: code, stdout, stderr });
+    child.on("close", (code, signal) => {
+      if (timedOut) {
+        // Closed because we killed it after the timeout, not for any other reason.
+        settle({
+          exitCode: -1,
+          stdout,
+          stderr,
+          timedOut: true,
+          spawnError: `harness did not exit within ${HARNESS_TIMEOUT_MS}ms (killed with ${signal ?? "SIGTERM"})`,
+        });
+        return;
+      }
+      settle({ exitCode: code, stdout, stderr });
     });
 
     child.stdin.write(JSON.stringify(envelope) + "\n");
@@ -462,6 +518,10 @@ async function runFixture(suite, fixture, harnessCmd, mock) {
   // 4. Drive the harness.
   const res = await runHarness(harnessCmd, envelope, extraEnv);
 
+  if (res.timedOut) {
+    failures.push(`harness timed out: ${res.spawnError}`);
+    return { fixtureId, failures };
+  }
   if (res.spawnError) {
     failures.push(`harness spawn failed: ${res.spawnError}`);
     return { fixtureId, failures };

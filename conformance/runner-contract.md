@@ -481,6 +481,14 @@ The suite runner MUST:
 8. Assert recorded request headers against `expected_request_headers` when present (see
    [`expected_request_headers` assertions](#expected_request_headers-assertions)).
 9. Stop or reset the mock server between fixtures.
+10. Enforce a wall-clock budget on each harness process, terminating it and failing that fixture
+    with `harness timed out` if it has not exited in time. The reference runner uses 60 s
+    (`AVO_CONFORMANCE_HARNESS_TIMEOUT_MS` overrides it), which is far above the SDK's own 10-second
+    request and flush timeouts (SPEC.md §7.6, §4.6), so a conformant harness never approaches it.
+    This is a liveness requirement, not a performance one: the mock records a request only when the
+    request stream ends, so an SDK that sends a `Content-Length` larger than its body leaves the
+    server waiting for bytes that never arrive. Without the budget that hangs the entire run
+    instead of failing one fixture.
 
 ### Mock server API contract
 
