@@ -429,6 +429,15 @@ override replaces the request URL only — every header required by Section 7.2 
 > can set `AVO_INSPECTOR_MOCK_ENDPOINT` could redirect traffic (an HTTP downgrade) and capture the
 > `apiKey`. Because all conformance fixtures construct the SDK with `env: "dev"` or `"staging"`,
 > gating on `env` keeps every fixture runnable while production stays locked down.
+>
+> The gate is therefore only as good as the pairing it rests on: an instance's `apiKey` and `env`
+> describe the **same** environment. Constructing an instance with a production-scoped key and
+> `env: "dev"` or `"staging"` is a misconfiguration outside this model — it already files that
+> instance's observations under the wrong environment, before any override is considered — and no
+> environment-variable gate can repair it, since an attacker able to set one variable can set
+> another. An SDK that ships a production binary and wants a stronger boundary than `env` SHOULD
+> use the test-only build flag option above, which removes the override from the shipped artifact
+> entirely.
 
 <!-- Separates the two callouts: without it the blank line reads as one blockquote (MD028). -->
 

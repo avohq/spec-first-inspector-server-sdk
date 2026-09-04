@@ -53,14 +53,20 @@ posts to the old path and sends none of the three headers, so it is no longer co
   | `env` | Exactly `dev` / `staging` / `prod` |
   | `X-Avo-Client` | The SDK's `libPlatform`, identical on every request, never per-call input |
   | `Content-Type` | `application/json` — `text/plain` MUST NOT be used |
+  | `Content-Length` | The byte length of the body **actually sent** — the compressed length when `Content-Encoding: gzip` is present, never the length of the uncompressed JSON. An SDK MUST NOT switch to chunked transfer-encoding to avoid supplying it. |
 
 - **Authentication moved out of the body.** v2 reads the API key and the environment from the
   headers, never from the JSON body. A missing or empty `api-key`, or a missing/out-of-enum `env`,
   is answered **`400 {"ok":false,"error":"..."}`** and none of the request's events are ingested.
   For the SDK a `400` is an ordinary non-200: resolve, do not retry, drop the batch after logging.
-- **The request body is unchanged.** It still carries its own `apiKey` and `env` fields; v2 ignores
-  those copies. Keeping them keeps one body shape and one JSON Schema across ingestion paths, so
-  `schemas/event-batch.json` and `schemas/event-body.json` are structurally identical to 2.0.0.
+- **The endpoint move changes nothing in the request body.** It still carries its own `apiKey` and
+  `env` fields; v2 ignores those copies. Keeping them keeps one body shape and one JSON Schema
+  across ingestion paths, so **the base fields are unchanged from 2.0.0** and a 2.0.0-shaped body
+  is still valid. Note this is a statement about the *endpoint move only*: the gateway work folded
+  into this same release does add OPTIONAL `outputReference` / `originHint` and makes `appVersion`
+  nullable (with `appVersion: null` requiring `originHint`), so `schemas/event-batch.json` and
+  `schemas/event-body.json` are supersets of the 2.0.0 schemas rather than identical to them. A
+  call without `options` produces a body byte-identical to 2.0.0.
 - **`X-Avo-Client` MUST equal `libPlatform`.** The header identifies the sender, the body field
   identifies the same sender; a request where the two disagree is a conformance failure.
 
@@ -139,7 +145,7 @@ and which source it came from (`originHint`; low-cardinality, never a user ident
 | `conformance/runner/suite-runner.mjs` | Asserts all five SPEC.md §7.2 REQUIRED headers on every captured request: non-empty `api-key`, valid `env`, non-empty `x-avo-client`, and a `content-type` whose media type is exactly `application/json` (which rejects the `text/plain` browser-SDK workaround §7.2 forbids on v2). The first three must also equal the `apiKey` / `env` / `libPlatform` of every event in the same request, so a well-formed header set describing a *different* instance than the body does now fails. Those three comparisons are unconditional rather than type-guarded, so an event **missing** one of the fields fails too — otherwise a count-only fixture (`batch-6`) could certify a body that violates §7.3.1. `content-length` is asserted for presence and integer shape; its *value* is left to HTTP framing, which already enforces it (the server reads exactly `Content-Length` bytes, so a too-large value stalls the request and a too-small one truncates the body). Placeholder values in `expected_request_headers` are supported. |
 | `conformance/wire-protocol/fixtures.json` | `wire-1` gains `expected_request_headers` pinning `api-key: "test-key"`, `env: "dev"` and `x-avo-client: "<sdk-platform>"`. `wire-9` – `wire-13` cover the gateway options (all-set, `originHint` without `appVersion` → `null`, override without `originHint`, whitespace-only → omitted + fallback, property-name collision). |
 | `conformance/batching/fixtures.json` | `batch-1` pins the same headers with `env: "staging"`, so a hardcoded `env` fails either it or `wire-1`. `batch-7` covers per-event `options` inside one batch. |
-| `conformance/runner/example-harness/{sdk,harness}.mjs` | The reference SDK posts to v2 and sends the three headers on every request (including gzipped bodies and the mock-endpoint override); it implements §4.2.1 / §7.3.6. **Also fixes a 2.0.0 regression:** the example SDK never sent `sessionId: ""`, so 10 of the fixtures failed on `main`; `npm run conformance:run` is green again at 36/36. |
+| `conformance/runner/example-harness/{sdk,harness}.mjs` | The reference SDK posts to v2 and sends all five §7.2 REQUIRED headers on every request — `api-key`, `env`, `X-Avo-Client`, `Content-Type: application/json` and `Content-Length` (set from the payload actually sent, so a gzipped body carries the compressed length) — including when the body is gzipped and when the mock endpoint overrides the URL; it implements §4.2.1 / §7.3.6. **Also fixes a 2.0.0 regression:** the example SDK never sent `sessionId: ""`, so 10 of the fixtures failed on `main`; `npm run conformance:run` is green again at 36/36. |
 | `conformance/runner/coverage-map.json`, `conformance/**/README.md` | Spec version 3.0.0; new automated coverage entry for the required headers; fixture counts (36 total) and the gateway/`<absent>` entries. |
 
 ### Fixed

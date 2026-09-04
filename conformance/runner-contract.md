@@ -145,6 +145,16 @@ for `streamId`. When `options` is absent, the harness MUST NOT pass a fourth arg
 object), so the fixture exercises the 2.0.0 call shape. Statically-typed harnesses map each
 key to the corresponding typed option field; all fixture values are strings.
 
+**Why every fixture value is a string.** SPEC.md §7.3.6 normalization rule 3 also requires a
+*dynamically*-typed SDK to treat a non-string option value (number, boolean, object, array) as
+absent rather than stringify it. That rule is deliberately **not** covered by a fixture, and the
+reason is structural rather than an oversight: a statically-typed harness (C#, Go, Java, Rust)
+cannot receive `7` or `false` in a string-typed option field at all, so a fixture supplying one
+would fail every statically-typed SDK for being unrepresentable rather than for being wrong. It is
+recorded as a `manual` entry in [`runner/coverage-map.json`](./runner/coverage-map.json) and MUST
+be verified by the SDK's own unit tests in dynamically-typed languages. `wire-12` covers the part
+that *is* universally expressible: empty and whitespace-only strings are treated as absent.
+
 ### Multi-event sequence mode (`operation: "sequence"`)
 
 The `batching` suite uses `operation: "sequence"` to run an ordered series of actions against a
@@ -203,8 +213,9 @@ Each element of `steps` is one action, executed in order on the same instance:
 | `expected_unique_message_ids` | When `true`, every `messageId` across all captured events MUST be present and **unique** — no duplicates (no event sent twice) and the count of distinct `messageId`s MUST equal `expected_event_union_count`. Together these pin the atomic swap-and-clear invariant (SPEC.md §3.1, §12.4). |
 | `expected_request_headers` | Optional. Asserted against **every** captured request exactly as in the wire-protocol suite — see [`expected_request_headers` assertions](#expected_request_headers-assertions). A sequence that makes several calls therefore asserts the block once per batch (`batch-1` uses this to pin `env: "staging"` on both of its batches). |
 
-The SPEC.md §7.2 required headers (`api-key`, `env`, `x-avo-client`, `content-type`) are asserted on every captured
-request in this mode too, whether or not the fixture declares `expected_request_headers` — see
+All five SPEC.md §7.2 required headers (`api-key`, `env`, `x-avo-client`, `content-type`,
+`content-length`) are asserted on every captured request in this mode too, whether the fixture
+declares `expected_request_headers` or not — see
 [Required request headers](#required-request-headers).
 
 **Output envelope.** For a sequence, `actual` is an array with one entry per step —
@@ -675,7 +686,7 @@ in `expected_request_headers`, and the always-on required-header assertions.
 - **Runner-side, no harness edit.** The `"<absent>"` placeholder, placeholder values in
   `expected_request_headers`, and the always-on required-header assertions are all evaluated by the
   suite runner against captured mock traffic. A `1.0.0` harness needs no edit for them — but the
-  **SDK it drives** must send the four asserted headers, or every request-making fixture fails.
+  **SDK it drives** must send all five asserted headers, or every request-making fixture fails.
 - **Harness edit REQUIRED.** `options` is a new optional field on the input envelope
   (`input.options` in single-event mode, `step.options` on a `track` step). A `1.0.0` harness
   ignores it and calls `trackSchemaFromEvent` with at most three arguments, so it cannot pass
