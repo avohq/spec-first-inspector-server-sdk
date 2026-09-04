@@ -424,11 +424,18 @@ batch body per the 1024-byte rule.
 
 ### AC-26 — Gateway options on the wire (SPEC.md §4.2.1, §7.3.6)
 
-`trackSchemaFromEvent` accepts an OPTIONAL trailing `options` parameter (or an overload) carrying
-`outputReference`, `originHint`, and `appVersion`. `outputReference` / `originHint` are sent as
-top-level siblings of `eventProperties` — trimmed, and OMITTED entirely (never `null` / `""`) when
-absent, empty, or whitespace-only. They never enter the schema, and `options` are resolved per call
-(`wire-9` – `wire-13`, `batch-7`). A call without `options` produces the 2.0.0 body.
+`trackSchemaFromEvent` accepts `outputReference`, `originHint` and `originAppVersion` as OPTIONAL
+per-call inputs. **The call-site shape follows the target language (SPEC.md §4.2.1), and both shapes
+are conformant:** a language with named / keyword arguments takes the three as top-level optional
+parameters; a language without them groups them in one optional options object, or an overload where
+appending a parameter would change an existing method's compiled signature. The wire body is
+identical either way, so do not judge a generated SDK non-conformant for using the shape its own
+language calls for.
+
+`outputReference` / `originHint` are sent as top-level siblings of `eventProperties` — trimmed, and
+OMITTED entirely (never `null` / `""`) when absent, empty, or whitespace-only. They never enter the
+schema, and the three are resolved per call (`wire-9` – `wire-13`, `batch-7`). A call that supplies
+none of them produces the 2.0.0 body.
 
 ### AC-27 — Per-event `appVersion` rule (SPEC.md §7.3.1, §7.3.6)
 
