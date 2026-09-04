@@ -87,19 +87,22 @@ server-side-only requirements; browser/client-side concerns do not apply.
   buffered events and makes no durability guarantee; callers that require delivery MUST `flush()`
   before exit (see Sections 4.6 and 12).
 
-### 3.3 sessionId, visitorId, and userId
+### 3.3 streamId, sessionId, visitorId, and userId
 
-- `sessionId` MUST be present in the wire body and MUST be the empty string `""` for server SDKs.
-  The Inspector backend ingestion pipeline silently DROPS events whose wire body omits `sessionId`
-  (the request still returns `200 {"success":true}`, but the event never appears on the dashboard).
-  Server SDKs do not model end-user sessions, so the value is always `""`, but the field MUST be
-  present.
-- Implementations MUST NOT include `visitorId` or `userId` in the wire body.
 - The Inspector server SDK does not model end-user sessions.
-- The `streamId` field in the wire body carries the caller-supplied stream id (or `""` if not
-  provided). It is NOT a generated session identifier.
-- AI coding agents generating SDKs MUST NOT add browser-style session tracking; `sessionId` is
-  always sent as the empty string `""`.
+- `streamId` is the only correlation identifier a server SDK sends. It is OPTIONAL and entirely
+  caller-supplied: the wire field carries whatever the caller passed, or `""` when the caller
+  passed nothing (Sections 7.3.1 and 8.2). It is NOT a generated session identifier, and the SDK
+  never invents a value for it.
+- `sessionId` is **not part of the wire body** and implementations SHOULD NOT send it. Correlation
+  that a caller wants across events belongs in `streamId`. **Read the dated note in Section 7.1
+  before dropping the field from a sender that is already in production** — until the ingestion
+  change described there ships, an event sent without `sessionId` is accepted with `200` and then
+  silently discarded.
+- Implementations MUST NOT include `visitorId` or `userId` in the wire body.
+- AI coding agents generating SDKs MUST NOT add browser-style session tracking. There is no session
+  concept to model here, and reintroducing `sessionId` as a generated value would attach a
+  high-cardinality identifier to server-side observations that Avo does not read.
 
 ### 3.4 Flush and Shutdown
 
@@ -500,6 +503,23 @@ override replaces the request URL only — every header required by Section 7.2 
 
 **Authentication.** There is no `Authorization` header: the API key travels in the `api-key`
 request header. `/inspector/v2/track` reads both the API key and the environment from these
+<!-- Separates the two callouts: without it the blank line reads as one blockquote (MD028). -->
+
+> **Ingestion note for the removed `sessionId` field (informative, as of 2026-09-04).** This
+> release removes `sessionId` from the wire body (Sections 3.3, 7.3.1, 8.2), because the endpoint
+> now supplies the value instead of requiring every sender to pad one in. **Both ingestion parsers
+> still REQUIRE the field today.** The v1 fast path guards on its presence and drops the event
+> outright, and the public parser used by v2 decodes it as a required field, which throws and
+> discards the event when it is absent. The request still answers `200 {"success":true}` in both
+> cases, so a sender that drops the field before ingestion accepts its absence loses **every
+> event, silently** — the precise failure that made the field required in 2.0.0 in the first
+> place. The ingestion change that defaults the field is in flight and lands before any sender
+> generated from this release reaches production. Until it does, a sender already running in
+> production SHOULD keep sending `sessionId: ""`; the field is an unknown extra field to this
+> spec's schemas rather than a forbidden one, so a body that still carries it stays conformant and
+> the conformance suite passes either way. This note will be removed when the ingestion change
+> ships.
+
 headers and never from the JSON body. The body MUST nevertheless keep carrying its own `apiKey`
 and `env` fields (Section 7.3.1): v2 ignores those copies, and keeping them keeps one body shape
 and one request schema across ingestion paths.
@@ -561,7 +581,6 @@ fields `outputReference` / `originHint` are likewise per event.
     "libPlatform": "ruby",
     "messageId": "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx",
     "streamId": "string",
-    "sessionId": "",
     "createdAt": "2026-05-25T12:00:00.000Z",
     "samplingRate": 1.0,
     "type": "event",
@@ -585,14 +604,14 @@ These fields MUST be present on every event object:
 | `libPlatform` | string | Identifies the SDK platform/language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). MUST be a non-empty string and MUST equal the `X-Avo-Client` request header value (Section 7.2). |
 | `messageId` | string | UUID v4 (random). MUST be unique per event. See Section 8. |
 | `streamId` | string | The caller-supplied stream id, or `""` if none provided. |
-| `sessionId` | string | Always the empty string `""` for server SDKs. MUST be present (required by the Inspector ingestion pipeline, which drops events that omit it). Server SDKs do not model end-user sessions. See Section 3.3. |
 | `createdAt` | string | ISO 8601 UTC timestamp at event send time (e.g., `"2026-05-25T12:00:00.000Z"`). A 3-digit millisecond suffix (e.g., `.000Z`) MUST be present; the value of those digits is not constrained. |
 | `samplingRate` | number | Current sampling rate `[0.0, 1.0]`. Initial value `1.0`. Updated from server response. |
 
-> **Note on omitted fields:** `trackingId` MUST NOT be sent. It is dead weight from the
-> browser SDK and carries no information for server-side use cases. Implementations MUST NOT
-> include it. (`sessionId` is NOT omitted — it is required and MUST be sent as the empty string
-> `""`; see Section 3.3.)
+> **Note on omitted fields:** `trackingId`, `visitorId` and `userId` MUST NOT be sent. They are
+> dead weight from the browser SDK and carry no information for server-side use cases.
+> `sessionId` is likewise not part of this body: a server SDK has no session to report, and the
+> endpoint supplies the value itself (Sections 3.3 and 7.1). Callers that need to correlate events
+> use `streamId`, which is OPTIONAL and caller-supplied.
 
 #### 7.3.2 Event-Specific Fields (`type: "event"`)
 
@@ -776,7 +795,6 @@ on an instance constructed with `version: "1.0.0"`:
     "libPlatform": "ruby",
     "messageId": "550e8400-e29b-41d4-a716-446655440001",
     "streamId": "",
-    "sessionId": "",
     "createdAt": "2026-09-03T12:00:00.000Z",
     "samplingRate": 1.0,
     "type": "event",
@@ -927,8 +945,10 @@ buffered events (see §3.2, §12.6) and performs no retry.
 - User-supplied string. No generation logic on the SDK side — it is whatever the caller passes.
 - Implementations MUST pass `streamId` through as-is without modification.
 - If absent or empty, `streamId` in the wire body MUST be `""` (empty string).
-- `trackingId` MUST NOT be sent. `sessionId` MUST be sent as an empty string `""` (see Section 3.3
-  and Section 7.3.1). `visitorId` and `userId` MUST NOT be sent.
+- `streamId` is the only correlation identifier on the wire, and it is OPTIONAL — the SDK sends
+  `""` when the caller supplies nothing rather than generating a value.
+- `trackingId`, `sessionId`, `visitorId` and `userId` MUST NOT be generated by the SDK. None of the
+  four is part of the wire body (see Section 3.3 and Section 7.3.1).
 
 ---
 
@@ -1608,6 +1628,9 @@ manifest metadata, or a `SPEC_VERSION` constant).
 *Spec version: 3.0.0 — moves every request to `POST https://api.avo.app/inspector/v2/track` and
 makes the `api-key`, `env` and `X-Avo-Client` request headers REQUIRED (Sections 7.1, 7.2); also
 adds the OPTIONAL gateway coordinates `outputReference` / `originHint` and the per-event
-`appVersion` override (`options`, Sections 4.2.1 and 7.3.6). 2.0.0 made `sessionId` a required wire
-field (empty string for server SDKs).*
+`appVersion` override (`options.originAppVersion`, Sections 4.2.1 and 7.3.6), lets the target
+language decide whether those three are top-level parameters or one options object (Section 4.2.1),
+and REMOVES `sessionId` from the wire body, which 2.0.0 had made a required empty string (Sections
+3.3, 7.3.1, 8.2 — read the dated ingestion note in Section 7.1 before dropping it from a sender
+already in production).*
 *Last updated: 2026-09-04.*

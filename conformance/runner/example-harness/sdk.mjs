@@ -359,8 +359,9 @@ export class AvoInspector {
           : (perEventAppVersion ?? this.appVersion); // unscoped: override or fall back
 
       // Build the self-contained wire body (§7.3) with the sampling-rate snapshot
-      // in effect at enqueue time (§7.7). sessionId is REQUIRED and always "" for
-      // server SDKs (§3.3, spec 2.0.0) — the ingestion pipeline drops events without it.
+      // in effect at enqueue time (§7.7). sessionId is NOT part of the body as of
+      // spec 3.0.0 (§3.3) — the endpoint supplies it. See the dated ingestion note
+      // in §7.1 before dropping it from a sender already running in production.
       const body = {
         apiKey: this.apiKey,
         appName: this.appName,
@@ -370,7 +371,6 @@ export class AvoInspector {
         libPlatform: LIB_PLATFORM,
         messageId: randomUUID(),
         streamId: resolvedStreamId,
-        sessionId: "",
         createdAt: new Date().toISOString(),
         samplingRate: this.samplingRate,
         type: "event",

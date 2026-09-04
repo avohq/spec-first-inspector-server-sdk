@@ -111,12 +111,15 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   **Required fields (MUST be present in every wire body):**
   `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
   `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
-  `messageId`, `samplingRate`, `sessionId`, `streamId`, `type`.
-  (`sessionId` MUST be the empty string `""` for server SDKs — the ingestion pipeline drops
-  events that omit it.)
+  `messageId`, `samplingRate`, `streamId`, `type`.
+  (`streamId` is the caller-supplied correlation id, or `""` when the caller supplied none.)
 
-  **Forbidden fields (MUST NOT appear in any wire body):**
-  `trackingId`, `visitorId`, `userId`.
+  **Not part of the wire body:**
+  `trackingId`, `visitorId`, `userId` — MUST NOT be sent.
+  `sessionId` — removed in 3.0.0; the endpoint supplies it. SDKs SHOULD NOT send it. Read the
+  dated ingestion note in SPEC.md §7.1 before dropping it from a sender already in production:
+  ingestion still requires it today, and an event without it is accepted with `200` and then
+  silently discarded.
 
   **Optional gateway fields (present ONLY when the caller supplied a non-blank value):**
   `outputReference`, `originHint` — top-level siblings of `eventProperties`, never inside the
@@ -323,9 +326,11 @@ body actually sent (compressed length when gzipped). A missing or invalid `api-k
 Every outgoing event object contains all required fields:
 `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
 `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
-`messageId`, `samplingRate`, `sessionId`, `streamId`, `type`.
-`sessionId` MUST be the empty string `""` for server SDKs (required by the Inspector ingestion
-pipeline, which drops events that omit it). `trackingId`, `visitorId`, and `userId` MUST NOT be sent.
+`messageId`, `samplingRate`, `streamId`, `type`.
+`trackingId`, `visitorId`, and `userId` MUST NOT be sent. `sessionId` is not part of the body as of
+3.0.0 — the endpoint supplies it — and SDKs SHOULD NOT send it; it is tolerated as an unknown extra
+field during the ingestion transition described in SPEC.md §7.1, so a sender already in production
+may keep sending `""` until that change ships.
 `appVersion` is a string except under the `originHint` rule of AC-27, where it is a literal `null`.
 
 ### AC-10 — libVersion plain SemVer, no suffix (SPEC.md §7.3.3)

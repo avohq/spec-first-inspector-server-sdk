@@ -113,20 +113,64 @@ Inspector API key per *gateway* instead of one source per destination, with each
 labeled by which gateway output it was bound for (`outputReference`; absent = gateway checkpoint)
 and which source it came from (`originHint`; low-cardinality, never a user identifier).
 
-- `trackSchemaFromEvent(eventName, eventProperties, streamId?, options?)` with
-  `options = { outputReference?: string; originHint?: string; appVersion?: string }` (trailing and
-  optional, or an overload in languages without optional parameters).
+- The three coordinates are `outputReference`, `originHint` and `originAppVersion`, trailing and
+  optional, or an overload where appending a parameter would change an existing method's compiled
+  signature.
+- **The call-site shape is decided by the target language, and both shapes are conformant.** A
+  language with named or keyword arguments (Python, Ruby, Kotlin, Swift, C#, …) takes the three as
+  top-level optional parameters on the track method, where an IDE surfaces the names at the call
+  site. A language without them (JavaScript/TypeScript, Go, Java, …) groups them in one optional
+  options object, because positional parameters would force callers to pass placeholders to reach
+  the last one. The wire body is byte-identical either way, so no fixture, JSON Schema, OpenAPI
+  property or wire assertion distinguishes them, and a generated SDK MUST NOT be judged
+  non-conformant for using the shape its own language calls for. The reference harness and example
+  SDK here are JavaScript, so the examples in this repository show the object shape — that is one
+  conformant shape, not the required one.
 - `outputReference` / `originHint` are top-level siblings of `eventProperties`, never inside the
   schema. Each value is trimmed; absent / `null` / empty / whitespace-only (and, in dynamically-typed
   languages, non-string) values are treated as absent and the key is **omitted** — never sent as
   `null` or `""`.
-- `appVersion` (always present) follows a four-cell rule: `options.appVersion` when provided; a
-  literal JSON `null` when `originHint` is set and no usable `options.appVersion` was given (the
-  event is source-scoped, so the instance's configured version never applies); otherwise the
-  constructor `version`.
-- `options` are per call; two calls for the same event with different `outputReference` values are
-  two observations and are both sent (no deduplication).
-- A call without `options` produces a body identical to the 2.0.0 body.
+- **The option is named `originAppVersion`; the wire field is still `appVersion`.** Next to
+  `originHint` nothing said whose version the option carried, and the whole reason it exists is
+  that the event came from a different source than the app this instance was configured for:
+  `originHint` says which source, `originAppVersion` says that source's version. The rename is
+  scoped to the call-site option. The top-level `appVersion` **wire** field keeps its name — it is
+  not gateway-specific, it has carried the constructor `version` on ordinary events since 1.0.0,
+  and renaming it would be a breaking change to a general-purpose field for no gain. So:
+  **`options.originAppVersion` sets the event's `appVersion` on the wire.**
+- Wire `appVersion` (always present) follows a four-cell rule: `options.originAppVersion` when
+  provided; a literal JSON `null` when `originHint` is set and no usable `options.originAppVersion`
+  was given (the event is source-scoped, so the instance's configured version never applies);
+  otherwise the constructor `version`.
+- The options are per call; two calls for the same event with different `outputReference` values
+  are two observations and are both sent (no deduplication).
+- A call that supplies none of the three produces a body identical to the 2.0.0 body.
+
+### Removed: `sessionId` on the wire (SPEC.md §3.3, §7.3.1, §8.2)
+
+**`sessionId` is no longer part of the request body.** 2.0.0 had made it REQUIRED with the constant
+value `""`; 3.0.0 removes it from the base body, the JSON Schema, the OpenAPI document, and every
+fixture. `streamId` — already present, already OPTIONAL, already caller-supplied — is the field
+that carries correlation between events. A server SDK has no session to report, so it was padding a
+constant into every event to satisfy a parser.
+
+**Why it was ever required, so nobody reinstates it.** 2.0.0 added it after empirical bisection:
+the ingestion pipeline silently DROPPED events whose body omitted `sessionId`, answering
+`200 {"success":true}` while the event never reached the dashboard. Adding `sessionId: ""` was
+found to be necessary and sufficient for delivery. That is a parser requirement, not a modeling
+one, and it now belongs where it always should have — the endpoint supplies the value, and senders
+stop carrying it.
+
+> **Sequencing — this one can lose data.** Both ingestion parsers still REQUIRE the field as of
+> 2026-09-04. The v1 fast path guards on its presence and drops the event; the public parser used
+> by v2 decodes it as a required field, which throws and discards the event when it is absent.
+> Both answer `200`. **A sender that drops `sessionId` before ingestion accepts its absence loses
+> every event, silently** — the exact failure that made the field required in the first place. The
+> ingestion change that defaults it is in flight and lands first. Until it does, a sender already
+> running in production should keep sending `sessionId: ""`: this release deliberately does **not**
+> add the field to the forbidden list, so a body that still carries it validates as an unknown
+> extra field and passes conformance. SPEC.md §7.1 carries the same warning as a dated note, to be
+> removed when the ingestion change ships.
 
 ### Changed
 
@@ -147,7 +191,14 @@ and which source it came from (`originHint`; low-cardinality, never a user ident
 | `conformance/runner/suite-runner.mjs` | **Each harness process now has a wall-clock budget** (60 s; `AVO_CONFORMANCE_HARNESS_TIMEOUT_MS` overrides). A harness that has not exited is terminated and its fixture fails with `harness timed out`. The mock records a request only when the request stream ends, so an SDK that sends a `Content-Length` larger than its body previously hung the entire run instead of failing one fixture. Asserts all five SPEC.md §7.2 REQUIRED headers on every captured request: non-empty `api-key`, valid `env`, non-empty `x-avo-client`, and a `content-type` whose media type is exactly `application/json` (which rejects the `text/plain` browser-SDK workaround §7.2 forbids on v2). The first three must also equal the `apiKey` / `env` / `libPlatform` of every event in the same request, so a well-formed header set describing a *different* instance than the body does now fails. Those three comparisons are unconditional rather than type-guarded, so an event **missing** one of the fields fails too — otherwise a count-only fixture (`batch-6`) could certify a body that violates §7.3.1. `content-length` is asserted for presence and integer shape; its *value* is left to HTTP framing, which already enforces it (the server reads exactly `Content-Length` bytes, so a too-large value stalls the request and a too-small one truncates the body). Placeholder values in `expected_request_headers` are supported. |
 | `conformance/wire-protocol/fixtures.json` | `wire-1` gains `expected_request_headers` pinning `api-key: "test-key"`, `env: "dev"` and `x-avo-client: "<sdk-platform>"`. `wire-9` – `wire-13` cover the gateway options (all-set, `originHint` without `appVersion` → `null`, override without `originHint`, whitespace-only → omitted + fallback, property-name collision). |
 | `conformance/batching/fixtures.json` | `batch-1` pins the same headers with `env: "staging"`, so a hardcoded `env` fails either it or `wire-1`. `batch-7` covers per-event `options` inside one batch. |
-| `conformance/runner/example-harness/{sdk,harness}.mjs` | The reference SDK posts to v2 and sends all five §7.2 REQUIRED headers on every request — `api-key`, `env`, `X-Avo-Client`, `Content-Type: application/json` and `Content-Length` (set from the payload actually sent, so a gzipped body carries the compressed length) — including when the body is gzipped and when the mock endpoint overrides the URL; it implements §4.2.1 / §7.3.6. **Also fixes a 2.0.0 regression:** the example SDK never sent `sessionId: ""`, so 10 of the fixtures failed on `main`; `npm run conformance:run` is green again at 36/36. |
+| `conformance/runner/example-harness/{sdk,harness}.mjs` | The reference SDK posts to v2 and sends all five §7.2 REQUIRED headers on every request — `api-key`, `env`, `X-Avo-Client`, `Content-Type: application/json` and `Content-Length` (set from the payload actually sent, so a gzipped body carries the compressed length) — including when the body is gzipped and when the mock endpoint overrides the URL; it implements §4.2.1 / §7.3.6, reads the renamed `options.originAppVersion`, and no longer sends `sessionId`. `npm run conformance:run` is green at 36/36. |
+| `SPEC.md` §3.3, §7.3.1, §8.2 | `sessionId` removed from the base body example, the Base Body Fields table and the identifier rules. §3.3 is retitled and now leads with `streamId` as the only correlation identifier a server SDK sends; the "omitted fields" note covers `trackingId` / `visitorId` / `userId` and explains that the endpoint supplies `sessionId`. |
+| `SPEC.md` §7.1 | New dated ingestion note, in the same shape as the v1 gateway-field note this release removed: both parsers still require `sessionId` today, a sender that drops it early loses every event at `200`, and the note is removed when the ingestion change ships. |
+| `SPEC.md` §4.2, §4.2.1 | §4.2 shows both call-site shapes; §4.2.1 states the language criterion, that both shapes are conformant, and that this repository's JavaScript examples are one conformant shape rather than the required one. The option is renamed `originAppVersion` throughout, with the wire mapping stated where a reader meets it. |
+| `AGENTS.md` | `sessionId` removed from the required-field checklist and AC-9 and moved to a "not part of the wire body" note carrying the sequencing warning. AC-26/AC-27 and the gateway checklist items take the renamed option. |
+| `openapi.yaml`, `schemas/event-body.json` | `sessionId` removed from `required`, from `properties`, and from both request-body examples. It is deliberately **not** added to the forbidden `not.anyOf`, so a sender still emitting it during the ingestion transition validates as an unknown extra field; both documents say so. Description strings take the renamed option; no property name, required entry or validation keyword changes for the rename. |
+| `conformance/**/fixtures.json` | The 26 expected event objects that carried `"sessionId": ""` no longer do. The `options` key in `wire-9` / `wire-11` / `batch-7` carries `originAppVersion`. |
+| `conformance/runner-contract.md` | Passing the options follows the SDK's own call-site shape: the object as the fourth argument for a grouped SDK, each key as its matching top-level parameter for a flattened one. The envelope key stays `options` in both cases. |
 | `conformance/runner/coverage-map.json`, `conformance/**/README.md` | Spec version 3.0.0; new automated coverage entry for the required headers; fixture counts (36 total) and the gateway/`<absent>` entries. |
 
 ### Fixed
@@ -158,7 +209,6 @@ wire contract; each corrected an artifact that contradicted SPEC.md.
 | Artifact | Fix |
 |---|---|
 | `conformance/batching/README.md` | The manual matrix instructed SDK authors to **re-queue** a batch after a transient network error or timeout, and labelled it SHOULD. SPEC.md §12.5 requires the opposite: on any send failure the batch MUST NOT be re-queued and its events are dropped, because the backend does not deduplicate on `messageId` and a retry would double-count. The parent `conformance/README.md` already stated this correctly. |
-| `openapi.yaml` | The `plainEvent` request-body example omitted `sessionId`, so it did not validate against the `EventBody` schema defined in the same document (2.0.0 made `sessionId` REQUIRED with `const: ""`). |
 | `openapi.yaml`, `schemas/event-body.json` | The `outputReference` / `originHint` pattern was `^\S(.*\S)?$`, which rejects internal line terminators because ECMA-262 `.` does not match them. §7.3.6 normalization is trim-only and preserves internal whitespace, so the schemas rejected output a conformant SDK would send. Now `^(?!\s)(?![\s\S]*\s$)[\s\S]+$`, which mirrors trim-only exactly. |
 | `conformance/runner-contract.md` | The document header still declared `Version: 1.0.0` while its own Versioning section declared the contract at 1.1.0. |
 | `conformance/wire-protocol/fixtures.json` | The `wire-6` / `wire-7` notes cited the gzip rule as SPEC.md §7.3.7; it is §7.3.5. |
