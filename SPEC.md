@@ -244,6 +244,12 @@ language calls for, and the conformance suite asserts only the wire body, which 
 them. Where a language is genuinely ambiguous, prefer the shape an idiomatic library in that
 ecosystem would expose; record the choice in the SDK's README so a reader knows which to expect.
 
+The reference harness and example SDK under `conformance/runner/` are written in JavaScript, which
+is on the "no" row, so every call-site example in this repository shows the options-object shape.
+That is **one** conformant shape, picked by the example's own language — not the required one. An
+SDK whose language has named or keyword arguments MUST NOT copy it, and MUST flatten the three per
+the table above.
+
 - Adding the coordinates MUST NOT break existing call sites: they are trailing and optional. In a
   language without optional parameters, keep the existing three-parameter signature and add an
   overload that it delegates to — adding parameters to the existing method would change its

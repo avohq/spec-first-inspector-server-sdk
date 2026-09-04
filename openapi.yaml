@@ -272,8 +272,9 @@ components:
           minLength: 1
           description: |
             Per-event application version. The `version` constructor option unless overridden by
-            `options.appVersion`; a literal JSON `null` ONLY when `options.originHint` is set and
-            no usable `options.appVersion` was provided (SPEC.md §7.3.6). The key is always present.
+            `options.originAppVersion`; a literal JSON `null` ONLY when `options.originHint` is
+            set and no usable `options.originAppVersion` was provided (SPEC.md §7.3.6). The key is
+            always present.
             A `null` value is accepted by this endpoint and recorded as `unversioned`; the SDK MUST
             NOT suppress, substitute, or drop such an event.
         libVersion:

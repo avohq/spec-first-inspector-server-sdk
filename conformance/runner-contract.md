@@ -137,13 +137,21 @@ step 3 and the `input` row above:
 `trackSchemaFromEvent` without the third argument (not with `undefined` explicitly, unless the
 language requires it).
 
-`options` is optional (SPEC.md §4.2.1 / §7.3.6). When present, the harness MUST pass the object
-**verbatim** as the fourth argument (or the language-idiomatic options parameter / overload) — it
-MUST NOT trim, drop, or coerce any value; normalization is the SDK's job and is what the fixture
-asserts. When `options` is present but `streamId` is absent, pass the language's null/undefined
-for `streamId`. When `options` is absent, the harness MUST NOT pass a fourth argument (not an empty
-object), so the fixture exercises the 2.0.0 call shape. Statically-typed harnesses map each
-key to the corresponding typed option field; all fixture values are strings.
+`options` is optional (SPEC.md §4.2.1 / §7.3.6). When present, the harness MUST pass the three
+values through **verbatim** — it MUST NOT trim, drop, or coerce any value; normalization is the
+SDK's job and is what the fixture asserts.
+
+How they are passed follows the SDK's own call-site shape, which SPEC.md §4.2.1 decides from the
+target language. A harness for an SDK that groups them passes the object as the fourth argument; a
+harness for an SDK that flattens them passes each key as its matching top-level parameter and omits
+the ones the envelope does not carry. Either way the envelope key stays `options` — it is the
+transport for the three values, not a claim about the SDK's signature — and either way the wire
+body the fixture asserts is the same.
+
+When `options` is present but `streamId` is absent, pass the language's null/undefined for
+`streamId`. When `options` is absent, the harness MUST NOT pass any of the three (and MUST NOT pass
+an empty options object), so the fixture exercises the 2.0.0 call shape. Statically-typed harnesses
+map each key to the corresponding typed option field or parameter; all fixture values are strings.
 
 **Why every fixture value is a string.** SPEC.md §7.3.6 normalization rule 3 also requires a
 *dynamically*-typed SDK to treat a non-string option value (number, boolean, object, array) as
