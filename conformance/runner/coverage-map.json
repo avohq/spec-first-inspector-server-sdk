@@ -334,7 +334,8 @@
       "fixtures": [
         "wire-10",
         "wire-12",
-        "wire-13"
+        "wire-13",
+        "batch-7"
       ]
     },
     {
@@ -347,7 +348,7 @@
       ]
     },
     {
-      "behavior": "options are per event: same event tracked with different outputReference values (and none) lands as distinct elements in one batch, no deduplication",
+      "behavior": "options are per event: same event tracked with different outputReference values (and none) lands as distinct elements in one batch with its own resolved appVersion (override / null / constructor), no deduplication",
       "spec": [
         "SPEC.md §4.2.1",
         "SPEC.md §12.7"

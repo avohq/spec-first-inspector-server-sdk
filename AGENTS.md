@@ -113,8 +113,10 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   `{ outputReference?, originHint?, appVersion? }` — without breaking existing call sites; a call
   without `options` produces a body identical to the pre-2.1.0 body (SPEC.md §4.2.1).
 - [ ] Each option value is normalized independently: trimmed; absent / `null` / empty /
-  whitespace-only (and, in dynamically-typed languages, non-string) values are treated as absent
-  and the key is OMITTED (SPEC.md §7.3.6).
+  whitespace-only (and, in dynamically-typed languages, non-string) values are treated as absent.
+  For `outputReference` and `originHint`, absent means the wire key is OMITTED. `appVersion` is
+  never omitted — the key is always present and resolves per the four-cell rule below
+  (SPEC.md §7.3.6).
 - [ ] Wire `appVersion` follows the four-cell rule: `options.appVersion` when provided; a literal
   JSON `null` when `originHint` is set and no usable `options.appVersion` was given; otherwise the
   constructor `version`. The key is always present. SHOULD warn once per process (without logging

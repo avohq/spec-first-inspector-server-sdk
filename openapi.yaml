@@ -173,6 +173,15 @@ components:
           - required: [trackingId]
           - required: [visitorId]
           - required: [userId]
+      # SPEC.md §7.3.6: appVersion may be null ONLY when originHint is present (source-scoped
+      # event with no usable per-event version); without originHint the constructor version is sent.
+      if:
+        required: [appVersion]
+        properties:
+          appVersion:
+            type: "null"
+      then:
+        required: [originHint]
       required:
         - apiKey
         - appName

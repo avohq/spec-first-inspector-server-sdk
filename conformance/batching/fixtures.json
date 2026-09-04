@@ -125,7 +125,7 @@
   },
   {
     "fixture_id": "batch-7",
-    "description": "Per-event gateway options: the same event tracked three times with outputReference meta-x7k2q, ga4-z9k1p, and no options lands as three distinct elements of one batch — options are per call and nothing is deduplicated",
+    "description": "Per-event gateway options: the same event tracked three times — outputReference meta-x7k2q with a per-event appVersion override, outputReference ga4-z9k1p with originHint and no appVersion (null), and no options — lands as three distinct elements of one batch, each carrying its own resolved fields; nothing is deduplicated",
     "constructor": {
       "apiKey": "test-key",
       "env": "staging",
@@ -143,7 +143,8 @@
         },
         "streamId": "s1",
         "options": {
-          "outputReference": "meta-x7k2q"
+          "outputReference": "meta-x7k2q",
+          "appVersion": "4.2.0"
         }
       },
       {
@@ -154,7 +155,8 @@
         },
         "streamId": "s1",
         "options": {
-          "outputReference": "ga4-z9k1p"
+          "outputReference": "ga4-z9k1p",
+          "originHint": "android"
         }
       },
       {
@@ -178,77 +180,77 @@
     "expected_request_count": 1,
     "expected_request_bodies": [
       [
-      {
-        "apiKey": "test-key",
-        "appName": "TestApp",
-        "appVersion": "1.0.0",
-        "libVersion": "<semver>",
-        "env": "staging",
-        "libPlatform": "<sdk-platform>",
-        "messageId": "<uuid-v4>",
-        "streamId": "s1",
-        "sessionId": "",
-        "createdAt": "<iso8601>",
-        "samplingRate": 1,
-        "type": "event",
-        "eventName": "Purchase",
-        "outputReference": "meta-x7k2q",
-        "originHint": "<absent>",
-        "eventProperties": [
-          {
-            "propertyName": "a",
-            "propertyType": "int"
-          }
-        ]
-      },
-      {
-        "apiKey": "test-key",
-        "appName": "TestApp",
-        "appVersion": "1.0.0",
-        "libVersion": "<semver>",
-        "env": "staging",
-        "libPlatform": "<sdk-platform>",
-        "messageId": "<uuid-v4>",
-        "streamId": "s1",
-        "sessionId": "",
-        "createdAt": "<iso8601>",
-        "samplingRate": 1,
-        "type": "event",
-        "eventName": "Purchase",
-        "outputReference": "ga4-z9k1p",
-        "originHint": "<absent>",
-        "eventProperties": [
-          {
-            "propertyName": "a",
-            "propertyType": "int"
-          }
-        ]
-      },
-      {
-        "apiKey": "test-key",
-        "appName": "TestApp",
-        "appVersion": "1.0.0",
-        "libVersion": "<semver>",
-        "env": "staging",
-        "libPlatform": "<sdk-platform>",
-        "messageId": "<uuid-v4>",
-        "streamId": "s1",
-        "sessionId": "",
-        "createdAt": "<iso8601>",
-        "samplingRate": 1,
-        "type": "event",
-        "eventName": "Purchase",
-        "outputReference": "<absent>",
-        "originHint": "<absent>",
-        "eventProperties": [
-          {
-            "propertyName": "a",
-            "propertyType": "int"
-          }
-        ]
-      }
+        {
+          "apiKey": "test-key",
+          "appName": "TestApp",
+          "appVersion": "4.2.0",
+          "libVersion": "<semver>",
+          "env": "staging",
+          "libPlatform": "<sdk-platform>",
+          "messageId": "<uuid-v4>",
+          "streamId": "s1",
+          "sessionId": "",
+          "createdAt": "<iso8601>",
+          "samplingRate": 1,
+          "type": "event",
+          "eventName": "Purchase",
+          "outputReference": "meta-x7k2q",
+          "originHint": "<absent>",
+          "eventProperties": [
+            {
+              "propertyName": "a",
+              "propertyType": "int"
+            }
+          ]
+        },
+        {
+          "apiKey": "test-key",
+          "appName": "TestApp",
+          "appVersion": null,
+          "libVersion": "<semver>",
+          "env": "staging",
+          "libPlatform": "<sdk-platform>",
+          "messageId": "<uuid-v4>",
+          "streamId": "s1",
+          "sessionId": "",
+          "createdAt": "<iso8601>",
+          "samplingRate": 1,
+          "type": "event",
+          "eventName": "Purchase",
+          "outputReference": "ga4-z9k1p",
+          "originHint": "android",
+          "eventProperties": [
+            {
+              "propertyName": "a",
+              "propertyType": "int"
+            }
+          ]
+        },
+        {
+          "apiKey": "test-key",
+          "appName": "TestApp",
+          "appVersion": "1.0.0",
+          "libVersion": "<semver>",
+          "env": "staging",
+          "libPlatform": "<sdk-platform>",
+          "messageId": "<uuid-v4>",
+          "streamId": "s1",
+          "sessionId": "",
+          "createdAt": "<iso8601>",
+          "samplingRate": 1,
+          "type": "event",
+          "eventName": "Purchase",
+          "outputReference": "<absent>",
+          "originHint": "<absent>",
+          "eventProperties": [
+            {
+              "propertyName": "a",
+              "propertyType": "int"
+            }
+          ]
+        }
       ]
     ],
-    "notes": "This is the primary multi-gate use case (SPEC.md §4.2.1): one gateway-scoped key, the same event observed once per gateway output (two tag instances / two calls with different outputReference) plus once at the gateway checkpoint (no options). All three MUST be sent as self-contained elements of one batch (SPEC.md §12.7), each carrying its own outputReference (or no key at all — '<absent>'), identical eventProperties, and the constructor appVersion (no originHint, no per-event override). A server SDK has no deduplication, so nothing collapses. Batch element order is not asserted (unordered multiset)."
+    "notes": "This is the primary multi-gate use case (SPEC.md §4.2.1): one gateway-scoped key, the same event observed once per gateway output (two calls with different outputReference) plus once at the gateway checkpoint (no options). All three MUST be sent as self-contained elements of one batch (SPEC.md §12.7), each carrying its own outputReference (or no key at all — '<absent>') and identical eventProperties. appVersion is resolved PER EVENT at enqueue and must survive batch serialization: the first element carries the per-event override '4.2.0' (originHint absent -> override), the second a literal JSON null (originHint present, no override), the third the constructor '1.0.0' (neither). An SDK that stamps the instance version on the whole batch at flush time fails this fixture. A server SDK has no deduplication, so nothing collapses. Batch element order is not asserted (unordered multiset)."
   }
 ]

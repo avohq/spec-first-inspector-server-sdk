@@ -111,5 +111,13 @@
       { "required": ["visitorId"] },
       { "required": ["userId"] }
     ]
+  },
+  "if": {
+    "required": ["appVersion"],
+    "properties": { "appVersion": { "type": "null" } }
+  },
+  "then": {
+    "required": ["originHint"],
+    "$comment": "SPEC.md §7.3.6: appVersion may be null ONLY when originHint is present (source-scoped event with no usable per-event version). Without originHint the constructor version MUST be sent."
   }
 }

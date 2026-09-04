@@ -71,10 +71,10 @@ note.
 | `SPEC.md` new §7.3.6 | Normative wire mapping: presence/omission, normalization, the four-cell `appVersion` table, one-time warning, example body. |
 | `SPEC.md` §12.7 | A batch MAY mix elements with/without gateway fields and with different per-event `appVersion`. |
 | `SPEC.md` Conformance Harness Reference | `"<absent>"` placeholder. |
-| `openapi.yaml`, `schemas/event-body.json` | `appVersion` nullable; OPTIONAL `outputReference` / `originHint` (`minLength: 1`, no surrounding whitespace); new `gatewayEvent` example. |
+| `openapi.yaml`, `schemas/event-body.json` | `appVersion` nullable, with an `if`/`then` rule that `null` requires `originHint`; OPTIONAL `outputReference` / `originHint` (`minLength: 1`, no surrounding whitespace); new `gatewayEvent` example. |
 | `conformance/runner-contract.md` (1.1.0) | `input.options` and `steps[].options` passed verbatim; `"<absent>"` placeholder; checklist item. |
 | `conformance/wire-protocol/fixtures.json` | `wire-9` – `wire-13`: all-set, `originHint` without `appVersion` → `null`, override without `originHint`, whitespace-only → omitted + fallback, property-name collision. |
-| `conformance/batching/fixtures.json` | `batch-7`: per-event `options` inside one batch, no deduplication. |
+| `conformance/batching/fixtures.json` | `batch-7`: per-event `options` inside one batch (own `outputReference` and own resolved `appVersion` — override / `null` / constructor), no deduplication. |
 | `conformance/runner/suite-runner.mjs` | `"<absent>"` key-must-not-exist assertion in `matchBody`. |
 | `conformance/runner/example-harness/{sdk,harness}.mjs` | Reference SDK implements §4.2.1 / §7.3.6; harness forwards `options`. **Also fixes a 2.0.0 regression:** the example SDK never sent `sessionId: ""`, so 10 of the 30 fixtures failed on `main` (`npm run conformance:run` was red); it is green again at 36/36. |
 | `conformance/runner/coverage-map.json`, `conformance/**/README.md`, `AGENTS.md` | Fixture counts (36 total), new automated/manual entries, checklist items, AC-26 / AC-27 (27 ACs). |
