@@ -58,6 +58,16 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 - [ ] Constructor throws synchronously with the exact message
   `"[Avo Inspector] No API key provided. Inspector can't operate without API key."`
   when `apiKey` is absent, empty, or whitespace-only (SPEC.md §4.1).
+- [ ] Constructor throws synchronously with the exact message
+  (copy as a single string — do not split across lines):
+
+  ```text
+  [Avo Inspector] API key contains a control character. The API key is sent as a request header and cannot contain CR, LF, or NUL.
+  ```
+
+  Throw when `apiKey` contains a carriage return (`U+000D`), line feed (`U+000A`), or NUL
+  (`U+0000`) (SPEC.md §4.1). `version` is NOT control-character checked — it travels in the JSON
+  body, where the encoder escapes such characters.
 - [ ] Constructor throws synchronously with the exact message for missing `version`
   (copy as a single string — do not split across lines):
 
@@ -324,6 +334,13 @@ replaces the URL only. Every request (overridden or not, compressed or not) carr
 the SDK's `libPlatform` and never varies per call, and `Content-Length` is the byte length of the
 body actually sent (compressed length when gzipped). A missing or invalid `api-key` / `env` header is answered
 `400 {"ok":false,"error":"..."}` and is handled as an ordinary non-200 (resolve, no retry).
+
+No header value may contain CR (`U+000D`), LF (`U+000A`), or NUL (`U+0000`) — those characters
+delimit header fields, so a value carrying one can inject headers or split the request. The SDK
+MUST check this itself rather than rely on the HTTP client, whose behavior varies by runtime, and
+MUST fail the send (drop the batch, log per §7.5) rather than strip, escape, or substitute the
+characters. `apiKey` is the only caller-supplied value that reaches a header, so it is the one to
+check; §4.1 rejects such a key at construction as well.
 
 ### AC-9 — Complete wire body fields (SPEC.md §7.3)
 

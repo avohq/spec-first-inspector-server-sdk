@@ -141,11 +141,25 @@ new AvoInspector(options: {
 | Option | Validation | Error message (exact) |
 |---|---|---|
 | `apiKey` | MUST be a non-empty, non-whitespace string | `"[Avo Inspector] No API key provided. Inspector can't operate without API key."` |
+| `apiKey` | MUST NOT contain a carriage return (`U+000D`), line feed (`U+000A`), or NUL (`U+0000`) | `"[Avo Inspector] API key contains a control character. The API key is sent as a request header and cannot contain CR, LF, or NUL."` |
 | `version` | MUST be a non-empty, non-whitespace string | `"[Avo Inspector] No version provided. Many features of Inspector rely on versioning. Please provide comparable string version, i.e. integer or semantic."` |
 | `env` | If absent, empty, or not one of `"dev"`/`"staging"`/`"prod"`: fall back to `"dev"` and emit a console warning. MUST NOT throw. | — |
 
 **Whitespace-only strings** for `apiKey` or `version` MUST be treated identically to empty
 strings (MUST throw with the error above).
+
+**Why the control-character check is at construction time as well as at send time.** The `apiKey`
+is the only caller-supplied value that reaches a request header (Section 7.2), and a key carrying
+CR, LF or NUL can corrupt every request the instance makes. Section 7.2 requires the SDK to refuse
+the send, which is the guard that actually protects the wire — but on its own it turns a
+configuration mistake into an application that starts cleanly and silently delivers nothing. Doing
+it here too fails loudly, once, at the moment the mistake is made, next to the existing `apiKey`
+checks that the caller is already reading. The two checks are deliberately redundant: this one is
+for the developer, the Section 7.2 one is for the wire.
+
+This applies to `apiKey` only. `version` is validated for emptiness above but is not
+control-character checked, because it travels in the JSON body as `appVersion`, where the JSON
+encoder escapes such characters and request framing is unaffected.
 
 **Side effects at construction time:**
 
@@ -492,20 +506,6 @@ override replaces the request URL only — every header required by Section 7.2 
 > (Section 7.7). Nothing there changes what a conformant SDK sends beyond the endpoint itself and
 > the headers in Section 7.2.
 
-### 7.2 Request Headers
-
-| Header | Value | Presence |
-|---|---|---|
-| `api-key` | The `apiKey` constructor option, verbatim | REQUIRED |
-| `env` | The instance's environment — exactly `dev`, `staging`, or `prod` (Section 6.1) | REQUIRED |
-| `X-Avo-Client` | The SDK's `libPlatform` value (Section 7.3.1) — e.g. `node`, `ruby`, `csharp`, `go` | REQUIRED |
-| `Content-Type` | `application/json` | REQUIRED |
-| `Accept` | `application/json` | RECOMMENDED |
-| `Content-Length` | Byte length of the request body actually sent (compressed length when `Content-Encoding: gzip` is present, otherwise the byte length of the serialized JSON) | REQUIRED |
-| `Content-Encoding` | `gzip` — present ONLY when the body is gzip-compressed (see Section 7.3.5). MUST be absent for uncompressed bodies. | CONDITIONAL |
-
-**Authentication.** There is no `Authorization` header: the API key travels in the `api-key`
-request header. `/inspector/v2/track` reads both the API key and the environment from these
 <!-- Separates the two callouts: without it the blank line reads as one blockquote (MD028). -->
 
 > **Ingestion note for the removed `sessionId` field (informative, as of 2026-09-04).** This
@@ -523,6 +523,20 @@ request header. `/inspector/v2/track` reads both the API key and the environment
 > the conformance suite passes either way. This note will be removed when the ingestion change
 > ships.
 
+### 7.2 Request Headers
+
+| Header | Value | Presence |
+|---|---|---|
+| `api-key` | The `apiKey` constructor option, verbatim | REQUIRED |
+| `env` | The instance's environment — exactly `dev`, `staging`, or `prod` (Section 6.1) | REQUIRED |
+| `X-Avo-Client` | The SDK's `libPlatform` value (Section 7.3.1) — e.g. `node`, `ruby`, `csharp`, `go` | REQUIRED |
+| `Content-Type` | `application/json` | REQUIRED |
+| `Accept` | `application/json` | RECOMMENDED |
+| `Content-Length` | Byte length of the request body actually sent (compressed length when `Content-Encoding: gzip` is present, otherwise the byte length of the serialized JSON) | REQUIRED |
+| `Content-Encoding` | `gzip` — present ONLY when the body is gzip-compressed (see Section 7.3.5). MUST be absent for uncompressed bodies. | CONDITIONAL |
+
+**Authentication.** There is no `Authorization` header: the API key travels in the `api-key`
+request header. `/inspector/v2/track` reads both the API key and the environment from these
 headers and never from the JSON body. The body MUST nevertheless keep carrying its own `apiKey`
 and `env` fields (Section 7.3.1): v2 ignores those copies, and keeping them keeps one body shape
 and one request schema across ingestion paths.
@@ -548,6 +562,39 @@ server SDK always holds the complete body and its exact size before the request 
 MUST NOT switch to chunked transfer-encoding to avoid supplying the header. Where the runtime's
 HTTP client sets `Content-Length` itself from a fully-buffered body, that satisfies this
 requirement — the SDK need only pass the body as bytes rather than as a stream.
+
+**No control characters in any header value.** An SDK MUST NOT transmit a request whose header
+value contains a carriage return (`U+000D`), a line feed (`U+000A`), or a NUL (`U+0000`). In
+HTTP/1.1 these characters delimit and terminate header fields, so a value carrying one can append
+attacker-chosen headers to the request or split it into two — the request the server receives is
+not the request the SDK meant to send.
+
+Of the required headers, `env` is one of three literal values chosen by the SDK, `X-Avo-Client` is
+a constant compiled into the SDK, and `Content-Type` / `Content-Length` are SDK-controlled. The
+`apiKey` constructor option is the **only caller-supplied value that reaches a header**, so it is
+where the check belongs and where an implementer should spend the effort. Section 4.1 requires the
+constructor to reject such a key outright; this section is the guard on the wire itself, and it
+also binds any caller-supplied header a future revision may add.
+
+An SDK MUST perform this check itself and MUST NOT delegate it to the HTTP client. Runtimes differ:
+some reject these characters, some throw a language-specific exception, and some pass them through
+or re-encode them silently. A conformant SDK behaves the same on all of them.
+
+When a header value cannot be transmitted safely, the SDK MUST **fail the send** — the batch is
+dropped and the failure logged per Section 7.5, exactly as any other send failure (Section 12.5),
+and `trackSchemaFromEvent` still resolves rather than rejects (Section 4.2). The SDK MUST NOT strip,
+escape, truncate, or substitute the offending characters: silently rewriting an API key would send
+a *different* key than the caller configured and turn a clear local failure into a confusing
+server-side rejection.
+
+> **Why this appears in this release.** Before the move to `/inspector/v2/track` the API key
+> travelled only inside the JSON body, where a control character is escaped by the JSON encoder and
+> cannot affect request framing. Putting the key in a request header is what creates this class of
+> bug, so every SDK generated from this spec inherits it at the same moment. The requirement is
+> stated here rather than left to implementers because the person generating an SDK is not
+> ordinarily thinking about header injection.
+
+<!-- Separates the two callouts: without it the blank line reads as one blockquote (MD028). -->
 
 > **`Content-Type` stays `application/json` for server SDKs.** Browser SDKs send compressed
 > bodies with `Content-Type: text/plain` to avoid a CORS preflight (`OPTIONS`) round-trip.

@@ -428,12 +428,12 @@
       "fixtures": []
     },
     {
-      "behavior": "Constructor validation throws on empty/whitespace apiKey or version; invalid env falls back to dev (no throw)",
+      "behavior": "Constructor validation throws on empty/whitespace apiKey or version, and on an apiKey containing CR/LF/NUL; invalid env falls back to dev (no throw)",
       "spec": [
         "SPEC.md §4.1",
         "SPEC.md §6.3"
       ],
-      "reason": "No fixture constructs an invalid instance (all 36 use valid constructor blocks). Verify via the SDK's own unit tests; the harness surfaces a constructor throw as passed:false + exit code 1.",
+      "reason": "No fixture constructs an invalid instance (all 36 use valid constructor blocks). Verify via the SDK's own unit tests; the harness surfaces a constructor throw as passed:false + exit code 1, which the runner contract defines as a harness/runtime invocation failure rather than an assertion result - so a fixture expecting a throw is indistinguishable from a broken harness.",
       "fixtures": []
     },
     {
@@ -451,6 +451,15 @@
         "SPEC.md §7.5.1"
       ],
       "reason": "Logging is observed on stderr, not asserted by the fixtures. Verify via the SDK's own unit tests.",
+      "fixtures": []
+    },
+    {
+      "behavior": "No header value carries CR/LF/NUL: an SDK validates the caller-supplied apiKey and fails the send rather than transmitting a value that could inject or split the request",
+      "spec": [
+        "SPEC.md §7.2",
+        "SPEC.md §4.1"
+      ],
+      "reason": "Not falsifiable through the harness. The observable outcome would be zero captured requests (expected_request_count: 0 with mock_response: null), which the fixture format already expresses - but three different SDKs produce it: one that validates and refuses the send (the required behavior), one that never validates and whose HTTP client happens to reject the value (not conformant, and runtime-dependent), and one that threw at construction per §4.1 (also correct, but a different rule). A fixture that passes for three reasons gates none of them. The §4.1 constructor throw is likewise unassertable - see the constructor-validation entry above. Verify both via the SDK's own unit tests: assert the constructor throws on a CR/LF/NUL apiKey, and assert that a send attempt with such a value produces no outbound request and drops the batch. Verified rather than assumed: on Node both fetch/undici and node:http reject a CR/LF header value before any bytes leave the process (TypeError 'invalid header' and ERR_INVALID_CHAR respectively), and the mock server records zero requests - identical to a correct refusal. That is the whole problem: the SDK swallows the runtime's rejection as an ordinary send failure, so it logs the wrong cause, and on a runtime that does NOT reject the value the injection simply happens.",
       "fixtures": []
     }
   ]
