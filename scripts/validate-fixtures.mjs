@@ -33,8 +33,9 @@ for (const file of readdirSync(schemasDir)) {
 // Read the forbidden wire fields out of the schema rather than restating them, so
 // this list cannot drift from schemas/event-body.json. They are encoded there as
 // not.anyOf[{ required: [name] }] (SPEC.md §3.3, §7.3.1).
-const FORBIDDEN_WIRE_FIELDS = (schemaByFile["event-body.json"]?.not?.anyOf ?? [])
-  .flatMap((clause) => clause.required ?? []);
+const forbiddenClauses = schemaByFile["event-body.json"]?.not?.anyOf;
+const FORBIDDEN_WIRE_FIELDS = (Array.isArray(forbiddenClauses) ? forbiddenClauses : [])
+  .flatMap((clause) => (Array.isArray(clause?.required) ? clause.required : []));
 
 const validateEntry = ajv.getSchema(idByFile["schema-entry.json"]);
 const validateProp = ajv.getSchema(idByFile["event-property-plain.json"]);
@@ -125,10 +126,32 @@ const requireArray = (suite, fixtureId, value, key) => {
 };
 
 // schema-extraction: every fixture MUST carry an expected[] (the asserted
+// Load one fixtures file. Every failure mode here is a fixture-authoring mistake,
+// so each is reported in the [FAIL] format and the run continues to the next
+// suite. Throwing instead — which an unguarded JSON.parse or `for...of` does —
+// aborts before the summary prints and loses every later suite, which is the
+// opposite of what a validator should do with bad input.
+const loadFixtures = (suite, rel) => {
+  let parsed;
+  try {
+    parsed = JSON.parse(readFileSync(join(root, rel), "utf8"));
+  } catch (err) {
+    failures += 1;
+    console.error(`[FAIL] ${suite} / — ${rel}: not readable as JSON (${err.message})`);
+    return [];
+  }
+  if (!Array.isArray(parsed)) {
+    failures += 1;
+    console.error(
+      `[FAIL] ${suite} / — ${rel}: expected the file to be an array of fixtures, got ${parsed === null ? "null" : typeof parsed}`,
+    );
+    return [];
+  }
+  return parsed;
+};
+
 // output); each element is a SchemaEntry.
-const schemaExtraction = JSON.parse(
-  readFileSync(join(root, "conformance/schema-extraction/fixtures.json"), "utf8"),
-);
+const schemaExtraction = loadFixtures("schema-extraction", "conformance/schema-extraction/fixtures.json");
 for (const f of schemaExtraction) {
   const expected = requireArray("schema-extraction", f.fixture_id, f.expected, "expected");
   if (!expected) continue;
@@ -158,7 +181,7 @@ for (const rel of [
   "conformance/error-handling/fixtures.json",
 ]) {
   const suite = rel.split("/")[1];
-  const fixtures = JSON.parse(readFileSync(join(root, rel), "utf8"));
+  const fixtures = loadFixtures(suite, rel);
   for (const f of fixtures) {
     // expected_request_body is legitimately absent when no request is expected
     // (e.g. wire-8, error-2). When present it MUST be an array — a present-but-
@@ -180,9 +203,7 @@ for (const rel of [
 // batching: expected_request_bodies is an array of batches; each batch is an array
 // of event bodies. Every event is an EventBody and every eventProperties[] element
 // of every event is an EventPropertyPlain.
-const batching = JSON.parse(
-  readFileSync(join(root, "conformance/batching/fixtures.json"), "utf8"),
-);
+const batching = loadFixtures("batching", "conformance/batching/fixtures.json");
 for (const f of batching) {
   // expected_request_bodies is absent for fixtures that send nothing (batch-3)
   // or assert via a different mechanism (batch-6). When present it MUST be an

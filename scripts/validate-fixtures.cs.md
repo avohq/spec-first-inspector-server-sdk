@@ -36,6 +36,11 @@ Node.js ES module (`.mjs`). Depends on `ajv` (draft 2020-12 build, imported from
 - A fixture that omits an optional container entirely is skipped, not failed: `expected_request_body`
   and `expected_request_bodies` are absent for fixtures that expect no request, and the suite checks
   for the key before reading it.
+- Every failure mode is REPORTED rather than thrown, so one bad suite cannot hide the others. A
+  fixtures file that is unreadable as JSON, or that parses to something other than an array of
+  fixtures, is reported in the `[FAIL]` format and the run continues to the next suite. An
+  unguarded `JSON.parse` or `for...of` would abort before the summary printed and lose every later
+  suite, which is the opposite of what a validator should do with bad input.
 - A container that is PRESENT but not an array is a fixture error, not a skip. `requireArray()` reports
   it in the `[FAIL]` format and sets the exit status, rather than defaulting to `[]` and certifying a
   malformed fixture with zero checks. This applies to each inner batch of `expected_request_bodies`
