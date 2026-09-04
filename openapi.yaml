@@ -44,11 +44,16 @@ paths:
         batch is flushed (see SPEC.md Section 12). In `dev` (where batchSize is forced to 1) each
         call sends a single-element array.
 
-        Three request headers are REQUIRED (SPEC.md §7.2): `api-key` (the Inspector API key —
-        modelled as the ApiKeyHeader security scheme), `env` (`dev` | `staging` | `prod`), and
-        `X-Avo-Client` (the sending platform, equal to the event body's `libPlatform`). A missing
-        or invalid `api-key` or `env` header is answered `400 {"ok": false, "error": "..."}` and no
-        event is ingested. This endpoint does not sample: the `samplingRate` it returns is `1.0`.
+        Five request headers are REQUIRED (SPEC.md §7.2): `api-key` (the Inspector API key —
+        modelled as the ApiKeyHeader security scheme), `env` (`dev` | `staging` | `prod`),
+        `X-Avo-Client` (the sending platform, equal to the event body's `libPlatform`),
+        `Content-Type: application/json`, and `Content-Length` (the byte length of the body
+        actually sent — the compressed length when the body is gzipped, never the length of the
+        uncompressed JSON; an SDK MUST NOT switch to chunked transfer-encoding to avoid supplying
+        it). The last two are transport headers determined by the request itself, so they are
+        described here rather than declared under `parameters`. A missing or invalid `api-key` or
+        `env` header is answered `400 {"ok": false, "error": "..."}` and no event is ingested. This
+        endpoint does not sample: the `samplingRate` it returns is `1.0`.
 
         The SDK MUST apply a 10-second timeout to every call.
         On 200, the SDK MUST update its internal samplingRate from the response body.

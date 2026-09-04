@@ -386,7 +386,8 @@ The mock server URL will always be `http://localhost:<port>` (no trailing slash,
 SDKs MUST send POST requests directly to this URL.
 
 **The override changes the URL only.** Every request MUST still carry the headers SPEC.md §7.2
-makes REQUIRED — `api-key`, `env`, `X-Avo-Client` and `Content-Type: application/json` — exactly as
+makes REQUIRED — `api-key`, `env`, `X-Avo-Client`, `Content-Type: application/json` and
+`Content-Length` — exactly as
 it would against the real endpoint. That is what makes the mock able to assert them (see
 [Required request headers](#required-request-headers)).
 
@@ -620,8 +621,9 @@ submitting conformance results.
       the mock server URL when this variable is set.
 - [ ] The SDK under test sends the SPEC.md §7.2 required headers on every request even when the
       endpoint is overridden: `api-key` (the fixture's `constructor.apiKey`), `env` (the fixture's
-      `constructor.env`), `X-Avo-Client` (the SDK's `libPlatform`), and
-      `Content-Type: application/json`.
+      `constructor.env`), `X-Avo-Client` (the SDK's `libPlatform`),
+      `Content-Type: application/json`, and `Content-Length` (the byte length of the body actually
+      sent — the compressed length when the body is gzipped).
 - [ ] Harness exits with code `0` on success, `1` on a harness/runtime invocation failure
       (never to signal an assertion result), and `2` on configuration/envelope errors.
 - [ ] Harness handles all `operation` values: `"extractSchema"`, `"trackSchemaFromEvent"`, and

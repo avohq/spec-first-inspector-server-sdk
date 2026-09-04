@@ -216,23 +216,30 @@ function assertRequiredHeaders(requests) {
     }
     if (Array.isArray(req.body)) {
       for (const event of req.body) {
-        if (!event || typeof event !== "object") continue;
-        if (typeof event.libPlatform === "string" && event.libPlatform !== client) {
+        // §7.3.1 makes apiKey / env / libPlatform REQUIRED string fields on every
+        // event. The comparisons below are unconditional rather than typeof-guarded
+        // so that a MISSING or non-string field fails too: a fixture that asserts
+        // only counts (batch-6) would otherwise certify a request whose events
+        // violate the wire-body contract.
+        if (!event || typeof event !== "object" || Array.isArray(event)) {
+          return { ok: false, reason: `request body contains a non-object event (SPEC §7.3)` };
+        }
+        if (event.libPlatform !== client) {
           return {
             ok: false,
-            reason: `header x-avo-client "${client}" != libPlatform "${event.libPlatform}" (SPEC §7.2)`,
+            reason: `header x-avo-client "${client}" != libPlatform ${JSON.stringify(event.libPlatform)} (SPEC §7.2, §7.3.1)`,
           };
         }
-        if (typeof event.apiKey === "string" && event.apiKey !== apiKey) {
+        if (event.apiKey !== apiKey) {
           return {
             ok: false,
-            reason: `header api-key "${apiKey}" != body apiKey "${event.apiKey}" (SPEC §7.2, §7.3.1)`,
+            reason: `header api-key "${apiKey}" != body apiKey ${JSON.stringify(event.apiKey)} (SPEC §7.2, §7.3.1)`,
           };
         }
-        if (typeof event.env === "string" && event.env !== env) {
+        if (event.env !== env) {
           return {
             ok: false,
-            reason: `header env "${env}" != body env "${event.env}" (SPEC §7.2, §7.3.1)`,
+            reason: `header env "${env}" != body env ${JSON.stringify(event.env)} (SPEC §7.2, §7.3.1)`,
           };
         }
       }

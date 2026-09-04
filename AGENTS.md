@@ -12,7 +12,8 @@ Generate a `<language>` Inspector SDK — a class named `AvoInspector` (or the
 language-idiomatic equivalent) — that conforms to the normative contract in `SPEC.md`.
 The SDK sends analytics event schemas to the Avo Inspector HTTP API at
 `POST https://api.avo.app/inspector/v2/track`, identifying itself with the REQUIRED `api-key`,
-`env` and `X-Avo-Client` request headers (SPEC.md §7.2). It is server-side only: no browser,
+`env` and `X-Avo-Client` request headers (SPEC.md §7.2), alongside the REQUIRED `Content-Type` and
+`Content-Length`. It is server-side only: no browser,
 no localStorage, no session management, no user-facing UI concerns. The SDK MUST
 extract a type schema from arbitrary event property maps and POST that schema to
 the Inspector API, handling sampling, batching, and graceful error
@@ -95,7 +96,10 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   verbatim (SPEC.md §7.1).
 - [ ] Every request carries the REQUIRED headers `api-key` (the `apiKey` constructor option),
   `env` (exactly `dev` / `staging` / `prod`), `X-Avo-Client` (the SDK's `libPlatform` value, e.g.
-  `node`, `ruby`, `csharp`, `go` — identical on every request) and `Content-Type: application/json`
+  `node`, `ruby`, `csharp`, `go` — identical on every request), `Content-Type: application/json`
+  and `Content-Length` (the byte length of the body **actually sent** — the compressed length when
+  the body is gzipped, never the length of the uncompressed JSON; an SDK MUST NOT switch to chunked
+  transfer-encoding to avoid supplying it)
   — including when the body is gzipped, and including when `AVO_INSPECTOR_MOCK_ENDPOINT` overrides
   the URL. The endpoint reads the API key and env from these headers, not from the body; a missing
   or invalid `api-key` / `env` header is answered `400 {"ok":false,"error":"..."}` and no event is
@@ -309,8 +313,9 @@ parser emits `"int"`; see SPEC.md §9.3.1.)
 `trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v2/track` over HTTPS.
 When `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST POST to that URL instead — the override
 replaces the URL only. Every request (overridden or not, compressed or not) carries `api-key`,
-`env`, `X-Avo-Client` and `Content-Type: application/json`; `X-Avo-Client` equals the SDK's
-`libPlatform` and never varies per call. A missing or invalid `api-key` / `env` header is answered
+`env`, `X-Avo-Client`, `Content-Type: application/json` and `Content-Length`; `X-Avo-Client` equals
+the SDK's `libPlatform` and never varies per call, and `Content-Length` is the byte length of the
+body actually sent (compressed length when gzipped). A missing or invalid `api-key` / `env` header is answered
 `400 {"ok":false,"error":"..."}` and is handled as an ordinary non-200 (resolve, no retry).
 
 ### AC-9 — Complete wire body fields (SPEC.md §7.3)
