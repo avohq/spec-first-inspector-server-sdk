@@ -866,8 +866,9 @@ buffered events (see §3.2, §12.6) and performs no retry.
   `samplingRate` it returns to `1.0`, and the counts it stores are exact rather than extrapolated
   from a sampled fraction. This changes none of the SDK obligations above: an SDK still reads
   `samplingRate` from a `200` that carries one, still leaves the rate unchanged on a `200` that does
-  not, still evaluates the per-event check at enqueue, and still honors whatever value it is given. It only means the value an SDK receives from the server
-  is `1.0`, so server-driven sampling no longer reduces what the SDK sends.
+  not, still evaluates the per-event check at enqueue, and still honors whatever value it is given.
+  It only means the value an SDK receives from the server is `1.0`, so server-driven sampling no
+  longer reduces what the SDK sends.
 
 ---
 
