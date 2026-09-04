@@ -88,7 +88,22 @@ production — generate your SDK from the spec and prove it with this runner.
 ```sh
 npm run conformance:run                       # default example harness
 npm run conformance:run -- --harness "ruby bin/conformance"
+
+npm test                                      # everything below, in order
+npm run validate:fixtures                     # fixtures vs the JSON Schemas
+npm run check:reference-sdk                   # the rules no fixture can gate
 ```
+
+`check:reference-sdk` asserts what this suite structurally cannot. A fixture can only
+observe the requests a mock captured, so "zero requests" passes for an SDK that validated
+and refused, for one that never validated and whose HTTP client happened to reject the
+value, and for one that threw at construction — three different SDKs, one of them
+conformant. That check runs in process and replaces `fetch` with a probe, which
+distinguishes them, and it asserts the inverse too: a clean `apiKey` must still reach the
+wire, since a guard that refused every send would otherwise look correct.
+
+It gates **this repository's** reference SDK only. A generated SDK in another language
+needs its own equivalent; see the manual entries in `coverage-map.json`.
 
 ## Honest limitations
 

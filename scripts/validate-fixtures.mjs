@@ -147,7 +147,17 @@ const loadFixtures = (suite, rel) => {
     );
     return [];
   }
-  return parsed;
+  // Each element must be an object before anything reads f.fixture_id or uses
+  // `in` on it. A null, number or string entry throws on both, which would abort
+  // the run — the same failure the file-level checks above exist to prevent, one
+  // level further in. Report and drop the bad entry; keep the good ones.
+  return parsed.filter((entry, i) => {
+    if (entry !== null && typeof entry === "object" && !Array.isArray(entry)) return true;
+    failures += 1;
+    const found = entry === null ? "null" : Array.isArray(entry) ? "an array" : typeof entry;
+    console.error(`[FAIL] ${suite} / — ${rel}[${i}]: expected a fixture object, got ${found}`);
+    return false;
+  });
 };
 
 // output); each element is a SchemaEntry.
