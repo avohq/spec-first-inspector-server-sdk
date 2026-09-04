@@ -59,14 +59,21 @@ posts to the old path and sends none of the three headers, so it is no longer co
   headers, never from the JSON body. A missing or empty `api-key`, or a missing/out-of-enum `env`,
   is answered **`400 {"ok":false,"error":"..."}`** and none of the request's events are ingested.
   For the SDK a `400` is an ordinary non-200: resolve, do not retry, drop the batch after logging.
-- **The endpoint move changes nothing in the request body.** It still carries its own `apiKey` and
-  `env` fields; v2 ignores those copies. Keeping them keeps one body shape and one JSON Schema
-  across ingestion paths, so **the base fields are unchanged from 2.0.0** and a 2.0.0-shaped body
-  is still valid. Note this is a statement about the *endpoint move only*: the gateway work folded
-  into this same release does add OPTIONAL `outputReference` / `originHint` and makes `appVersion`
-  nullable (with `appVersion: null` requiring `originHint`), so `schemas/event-batch.json` and
-  `schemas/event-body.json` are supersets of the 2.0.0 schemas rather than identical to them. A
-  call without `options` produces a body byte-identical to 2.0.0.
+- **The endpoint move by itself changes nothing in the request body.** It still carries its own
+  `apiKey` and `env` fields; v2 ignores those copies. Keeping them keeps one body shape and one
+  JSON Schema across ingestion paths.
+
+  Read that as a statement about the *endpoint move only*, not about the release. Two other changes
+  folded into 3.0.0 do alter the body: the gateway work adds OPTIONAL `outputReference` /
+  `originHint` and makes `appVersion` nullable (with `appVersion: null` requiring `originHint`),
+  and **`sessionId` is removed outright**. So the 3.0.0 body is NOT the 2.0.0 body, and no call —
+  with or without the gateway coordinates — reproduces one.
+
+  What does still hold is the compatibility direction that matters during the ingestion
+  transition: a 2.0.0-shaped body, `sessionId: ""` included, remains **valid** against the 3.0.0
+  schemas. `sessionId` was removed from `required` and `properties` but deliberately not added to
+  the forbidden set, and unknown extra fields are permitted, so the schemas accept every body
+  2.0.0 accepted.
 - **`X-Avo-Client` MUST equal `libPlatform`.** The header identifies the sender, the body field
   identifies the same sender; a request where the two disagree is a conformance failure.
 
