@@ -7,7 +7,7 @@ and correctly handles `streamId` edge cases.
 
 | Fixture ID | Description |
 |---|---|
-| `wire-1` | Basic event send — happy path with primitive properties, plus the SPEC.md §7.2 required request headers (`api-key`, `env`, `X-Avo-Client`, `Content-Type`) |
+| `wire-1` | Basic event send — happy path with primitive properties, plus the SPEC.md §7.2 required request headers (`api-key`, `env`, `X-Avo-Client`, `Content-Type`, `Content-Length`) |
 | `wire-2` | Sampling drop — `samplingRate = 0.0` produces zero HTTP calls |
 | `wire-3` | Non-200 response — SDK resolves (does not reject) |
 | `wire-4` | `streamId` with colons — verbatim passthrough as `streamId` (spec Edge Case 9) |
@@ -33,22 +33,23 @@ and correctly handles `streamId` edge cases.
 
 ## Required Request Headers
 
-Every request to the Inspector API carries `api-key`, `env`, `X-Avo-Client` and
-`Content-Type: application/json` (SPEC.md §7.2). The suite runner asserts all four on **every**
-captured request in every suite, whether or not the fixture declares an `expected_request_headers`
-block:
+Every request to the Inspector API carries `api-key`, `env`, `X-Avo-Client`,
+`Content-Type: application/json` and `Content-Length` (SPEC.md §7.2). The suite runner asserts all
+five on **every** captured request in every suite, whether or not the fixture declares an
+`expected_request_headers` block:
 
 - `api-key` — a non-empty string, **and** equal to the `apiKey` of every event in that request's body.
 - `env` — exactly `dev` / `staging` / `prod`, **and** equal to the `env` of every event in that body.
 - `x-avo-client` — non-empty, **and** equal to the `libPlatform` of every event in that body.
 - `content-type` — media type exactly `application/json`. A server SDK MUST NOT send `text/plain`;
   that is the browser-SDK CORS workaround and `/inspector/v2/track` mishandles such a body.
+- `content-length` — present and a non-negative integer. Presence only: HTTP framing already
+  enforces the value, since the server reads exactly `Content-Length` bytes.
 
 The three header/body equalities matter because all three headers and their body counterparts come
 from the same constructor options (SPEC.md §7.3.1) — without the cross-check an SDK could send a
-well-formed header set describing a different instance than the body does. `Content-Length` is the
-fifth §7.2 REQUIRED header and is *not* asserted: the HTTP stack sets it, and a chunked request
-legitimately omits it. See [runner-contract.md](../runner-contract.md#required-request-headers).
+well-formed header set describing a different instance than the body does. See
+[runner-contract.md](../runner-contract.md#required-request-headers).
 
 `wire-1` additionally pins the exact values: `api-key: "test-key"` and `env: "dev"` come from its
 `constructor` block, and `x-avo-client` is format-validated with `"<sdk-platform>"` because the

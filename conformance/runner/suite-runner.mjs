@@ -162,10 +162,10 @@ const REQUIRED_CONTENT_TYPE = "application/json";
  * FORBIDDEN_WIRE_FIELDS — so an SDK that omits or mislabels them fails conformance
  * even for a fixture that declares no `expected_request_headers`.
  *
- * Four of the five §7.2 REQUIRED headers are checked here: `api-key`, `env`,
- * `X-Avo-Client` and `Content-Type`. `Content-Length` is not, because it is set by
- * the HTTP stack rather than by SDK code and a legitimately chunked request omits
- * it; it stays in the manual matrix.
+ * All five §7.2 REQUIRED headers are checked here: `api-key`, `env`, `X-Avo-Client`,
+ * `Content-Type` and `Content-Length`. `Content-Length` is asserted by value against
+ * the byte count the mock actually received, which is what catches an SDK that sends
+ * the uncompressed JSON length alongside a gzipped body.
  *
  * Three of them must also agree with the body they accompany, because all three
  * come from the same constructor options that produce the body fields (§7.3.1):
@@ -198,6 +198,20 @@ function assertRequiredHeaders(requests) {
       return {
         ok: false,
         reason: `required header content-type must be ${REQUIRED_CONTENT_TYPE}, got "${contentType ?? "absent"}" (SPEC §7.2)`,
+      };
+    }
+    // §7.2 requires Content-Length on every request. Only presence and shape are
+    // asserted: HTTP framing already enforces the *value*, because the server reads
+    // exactly Content-Length bytes. A length larger than the body (the real bug —
+    // sending the uncompressed JSON length alongside a gzipped body) stalls the
+    // request until it times out, so the fixture fails on a missing request; a
+    // smaller one truncates the body and fails JSON parsing. Neither can reach the
+    // runner as a length that disagrees with what was received.
+    const contentLength = headers["content-length"];
+    if (typeof contentLength !== "string" || !/^\d+$/.test(contentLength)) {
+      return {
+        ok: false,
+        reason: `required header content-length missing or not an integer, got "${contentLength ?? "absent"}" (SPEC §7.2)`,
       };
     }
     if (Array.isArray(req.body)) {

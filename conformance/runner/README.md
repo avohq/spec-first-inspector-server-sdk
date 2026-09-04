@@ -48,11 +48,10 @@ The runner:
    **unordered multiset**, `expected_event_union_count`, `expected_unique_message_ids`, and
    `expected_request_headers` (literal, placeholder, or `null` for "header absent"), and the
    `"<absent>"` placeholder (a key that MUST NOT be present — the omitted gateway fields). On
-   **every** captured request it also asserts four of the five SPEC.md §7.2 required headers: a
-   non-empty `api-key`, an `env` of `dev` / `staging` / `prod`, a non-empty `x-avo-client`, and a
-   `content-type` whose media type is exactly `application/json`. The first three must additionally
-   equal the `apiKey` / `env` / `libPlatform` of every event in that request. `Content-Length` is
-   not asserted — the HTTP stack sets it.
+   **every** captured request it also asserts all five SPEC.md §7.2 required headers: a non-empty
+   `api-key`, an `env` of `dev` / `staging` / `prod`, a non-empty `x-avo-client`, a `content-type`
+   whose media type is exactly `application/json`, and an integer `content-length`. The first three
+   must additionally equal the `apiKey` / `env` / `libPlatform` of every event in that request.
 5. Prints a per-fixture `[PASS]` / `[FAIL]` line and a `N/36 PASS` summary. Exit code `0` only when
    every fixture passes; non-zero otherwise.
 

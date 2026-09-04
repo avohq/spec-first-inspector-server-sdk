@@ -523,7 +523,7 @@ fixtures to ensure each fixture starts with a clean request log.
 ### Required request headers
 
 SPEC.md §7.2 makes five headers REQUIRED on every request to the Inspector API. The suite runner
-asserts four of them on **every** captured request, in every suite, independently of any
+asserts all five on **every** captured request, in every suite, independently of any
 `expected_request_headers` block — the same way it rejects a body carrying a forbidden identifier
 field. An SDK that omits them fails conformance even against a fixture that declares no header
 expectations:
@@ -534,10 +534,17 @@ expectations:
 | `env` | Present, exactly one of `dev` / `staging` / `prod`, and equal to the `env` of every event in that same request's body. |
 | `x-avo-client` | Present, a non-empty string, and equal to the `libPlatform` of every event in that same request's body. |
 | `content-type` | Present, and its media type is exactly `application/json` (parameters such as `; charset=utf-8` are ignored). A server SDK MUST NOT send `text/plain` — that is the browser-SDK CORS workaround, and `/inspector/v2/track` does not handle such a body correctly. |
+| `content-length` | Present and a non-negative integer. |
 
-The fifth, `Content-Length`, is **not** asserted: it is produced by the HTTP stack rather than by
-SDK code, and a legitimately chunked request omits it. It stays in the manual matrix in
-[`../README.md`](./README.md).
+**Why `content-length` is asserted for presence only.** Its *value* is enforced by HTTP framing
+itself, so a separate assertion would be unreachable: the server reads exactly `Content-Length`
+bytes, so what the runner receives can never disagree with what the header claims. The real bug —
+sending the uncompressed JSON length alongside a gzipped body — stalls the request until it times
+out, and the fixture then fails on a missing request rather than on a bad header. A length shorter
+than the body truncates it and fails JSON parsing. An SDK that omits the header entirely (chunked
+transfer-encoding) is what the presence check catches, and SPEC.md §7.2 forbids that: §7.3.5
+already obliges the SDK to measure the serialized body to decide on compression, so it always
+knows the exact byte count.
 
 **Header/body agreement.** All three of `api-key`, `env` and `x-avo-client` are checked against the
 body they accompany, not just for well-formedness. Each of the three comes from the same

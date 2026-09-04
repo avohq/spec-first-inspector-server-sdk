@@ -472,6 +472,15 @@ the SDK writes to `libPlatform` on every event object, MUST be constant for the 
 process, and MUST NOT be derived from per-call input. It exists so that ingestion can attribute
 traffic per sender without decoding a body.
 
+**`Content-Length`.** The value MUST be the byte length of the body **actually sent** — the
+compressed length when `Content-Encoding: gzip` is present, never the length of the uncompressed
+JSON. The requirement is unconditional and always satisfiable: Section 7.3.5 already obliges the
+SDK to measure the serialized body's byte length in order to decide whether to compress it, so a
+server SDK always holds the complete body and its exact size before the request is sent. An SDK
+MUST NOT switch to chunked transfer-encoding to avoid supplying the header. Where the runtime's
+HTTP client sets `Content-Length` itself from a fully-buffered body, that satisfies this
+requirement — the SDK need only pass the body as bytes rather than as a stream.
+
 > **`Content-Type` stays `application/json` for server SDKs.** Browser SDKs send compressed
 > bodies with `Content-Type: text/plain` to avoid a CORS preflight (`OPTIONS`) round-trip.
 > Server-side SDKs are not subject to CORS and MUST keep `Content-Type: application/json`

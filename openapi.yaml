@@ -175,7 +175,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ErrorResponse"
+                $ref: "#/components/schemas/BadRequestResponse"
               example:
                 ok: false
                 error: "Missing api-key header"
@@ -427,17 +427,35 @@ components:
             transport failure and MUST NOT be retried.
 
     ErrorResponse:
-      description: Error response body for non-200 responses.
+      description: |
+        Permissive error body, used for the generic `429` and `500` responses. Neither SPEC.md nor
+        the endpoint contract specifies what those carry, so both properties are OPTIONAL — but a
+        body claiming `"ok": true` is still rejected. The `400` shape IS specified; it uses the
+        strict `BadRequestResponse` below.
       type: object
       properties:
         ok:
           type: boolean
           const: false
-          description: |
-            Always `false` on an error response — pinned as a constant so a generated validator
-            rejects a success-marked error body. The `400` shape is `{"ok": false, "error": "..."}`
-            (SPEC.md §7.4). The property stays OPTIONAL because the generic `429` / `500` responses
-            are not specified to carry it.
+          description: Always `false` on an error response, pinned so a success-marked error body is rejected.
         error:
           type: string
           description: Human-readable error message.
+    BadRequestResponse:
+      description: |
+        The `400` body, which SPEC.md §7.2 and §7.4 specify exactly as
+        `{"ok": false, "error": "<message>"}`. Both properties are REQUIRED, so a generated
+        validator rejects `{}` and `{"ok": false}` — unlike the permissive `ErrorResponse`, which
+        has to tolerate the unspecified `429` / `500` bodies.
+      type: object
+      required:
+        - ok
+        - error
+      properties:
+        ok:
+          type: boolean
+          const: false
+          description: Always `false` on a `400`.
+        error:
+          type: string
+          description: Human-readable reason the `api-key` or `env` header was rejected.
