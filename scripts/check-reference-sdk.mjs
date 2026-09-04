@@ -80,11 +80,27 @@ check(constructed, "control: a clean apiKey still constructs");
 console.log("§7.2 the SDK refuses the send itself when a header value carries CR / LF / NUL");
 const realFetch = globalThis.fetch;
 let reachedFetch = false;
-globalThis.fetch = async () => {
+let lastCall = null;
+globalThis.fetch = async (url, init) => {
   reachedFetch = true;
+  // Capture the request so the controls can assert what was actually transmitted,
+  // not merely that something was. Recording only "fetch happened" would let the
+  // gzip claims below pass with compression removed or its threshold raised.
+  lastCall = { url, headers: init?.headers ?? {}, body: init?.body };
   // If the SDK delegated the check to its HTTP client, execution arrives here.
   throw new Error("fetch was reached: the SDK did not perform its own §7.2 check");
 };
+
+// Header lookup is case-insensitive per RFC 9110; the SDK's casing is its own choice.
+const headerOf = (call, name) => {
+  const entries = Object.entries(call?.headers ?? {});
+  const hit = entries.find(([key]) => key.toLowerCase() === name.toLowerCase());
+  return hit ? hit[1] : undefined;
+};
+// gzip streams begin 0x1f 0x8b (RFC 1952). Checking the bytes, not just the header,
+// means a body that merely CLAIMS to be gzipped cannot satisfy this.
+const isGzipBytes = (body) =>
+  body != null && body.length > 2 && body[0] === 0x1f && body[1] === 0x8b;
 
 try {
   // Simulate a bad value arriving past the constructor, which is how this would
@@ -104,9 +120,13 @@ try {
   const clean = new AvoInspector({ apiKey: "clean-key", ...OPTS });
   clean.enableLogging(false);
   reachedFetch = false;
+  lastCall = null;
   await clean.trackSchemaFromEvent("evt", { a: 1 }, "s1").catch(() => {});
   await clean.flush().catch(() => {});
   check(reachedFetch, "control: a clean apiKey DOES reach the wire — the guard discriminates");
+  check(headerOf(lastCall, "Content-Encoding") === undefined,
+        "a small body carries no Content-Encoding — the gzip threshold is pinned from both sides",
+        `header was ${JSON.stringify(headerOf(lastCall, "Content-Encoding"))}`);
 
   // The guard sits after gzip and Content-Length are applied, so cover that path
   // too: it is the one the placement of the check actually affects.
@@ -117,9 +137,21 @@ try {
   const bigClean = new AvoInspector({ apiKey: "clean-key", ...OPTS });
   bigClean.enableLogging(false);
   reachedFetch = false;
+  lastCall = null;
   await bigClean.trackSchemaFromEvent("big", bigProps, "s1").catch(() => {});
   await bigClean.flush().catch(() => {});
   check(reachedFetch, "control: a gzipped body with a clean key reaches the wire");
+  // These three make the gzip claim a real regression check rather than a label.
+  // Without them, removing compression or raising the threshold would still pass,
+  // and the guard's position relative to gzip is exactly what could regress.
+  check(headerOf(lastCall, "Content-Encoding") === "gzip",
+        "the large body really is sent with Content-Encoding: gzip",
+        `header was ${JSON.stringify(headerOf(lastCall, "Content-Encoding"))}`);
+  check(isGzipBytes(lastCall?.body),
+        "the transmitted payload really is gzip data, not just labelled as such");
+  check(headerOf(lastCall, "Content-Length") === String(lastCall?.body?.length),
+        "Content-Length matches the COMPRESSED payload, so it was set before the guard ran",
+        `header ${JSON.stringify(headerOf(lastCall, "Content-Length"))} vs body ${lastCall?.body?.length}`);
 
   const bigUnsafe = new AvoInspector({ apiKey: "clean-key", ...OPTS });
   bigUnsafe.enableLogging(false);
