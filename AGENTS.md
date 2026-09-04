@@ -183,9 +183,12 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   fails or times out (SPEC.md §7.5, §7.6).
 - [ ] When `samplingRate` is `0.0`, the event MUST be dropped silently and zero HTTP calls MUST
   be made (SPEC.md §7.7).
-- [ ] `samplingRate` MUST be updated from the `samplingRate` field in every successful 200
-  response body. Updates MUST use a lock or atomic primitive in multi-threaded runtimes
-  (SPEC.md §7.4, §7.7).
+- [ ] `samplingRate` MUST be updated from the response body's `samplingRate` field only when a
+  `200` carries one — that is, a numeric value in `[0.0, 1.0]`. A `200` whose body has no
+  `samplingRate` leaves the current value unchanged; this is the ordinary case for the
+  `{"success": false}` event-limit response, so an SDK MUST NOT read a missing field as `0.0`,
+  reset to a default, or fail. Updates MUST use a lock or atomic primitive in multi-threaded
+  runtimes (SPEC.md §7.4, §7.7).
 - [ ] Sampling is evaluated **per event at enqueue** (before buffering); a dropped event is never
   buffered and never sent. Whole-batch sampling MUST NOT be used (SPEC.md §7.7).
 
@@ -388,8 +391,10 @@ When `samplingRate` is `1.0`, all events are sent.
 
 ### AC-17 — samplingRate updated from 200 response (SPEC.md §7.4, §7.7)
 
-`samplingRate` is updated from the `samplingRate` field of every successful 200 response.
-Guarded by a lock or atomic primitive in multi-threaded runtimes.
+`samplingRate` is updated from the response body's `samplingRate` field only when a `200` carries
+one, as a numeric value in `[0.0, 1.0]`. A `200` with no such field leaves the current rate
+unchanged rather than resetting or zeroing it. Guarded by a lock or atomic primitive in
+multi-threaded runtimes.
 
 ### AC-18 — flush() implemented for all SDKs (SPEC.md §3.4, §4.6, §11.1)
 
