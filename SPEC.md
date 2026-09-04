@@ -153,18 +153,33 @@ strings (MUST throw with the error above).
 
 ### 4.2 `trackSchemaFromEvent`
 
+The three gateway coordinates are passed either as top-level parameters or grouped in one options
+object, decided by the target language — see Section 4.2.1, which is normative for the choice. Both
+forms are shown here; the wire body is identical either way.
+
 ```typescript
+// Shape A — a language WITH named/keyword arguments (Python, Ruby, Kotlin, Swift, C#, ...)
 trackSchemaFromEvent(
   eventName: string,
   eventProperties: { [propName: string]: any },
   streamId?: string,
-  options?: TrackOptions            // OPTIONAL gateway coordinates, see 4.2.1 and Section 7.3.6
+  outputReference?: string,   // which gateway output the payload was bound for; absent = gateway checkpoint
+  originHint?: string,        // low-cardinality label of the source the event came from
+  originAppVersion?: string   // the originating source's app version (see the rule in Section 7.3.6)
+): Promise<Array<{ propertyName: string; propertyType: string; children?: any }>>
+
+// Shape B — a language WITHOUT them (JavaScript/TypeScript, Go, Java, ...)
+trackSchemaFromEvent(
+  eventName: string,
+  eventProperties: { [propName: string]: any },
+  streamId?: string,
+  options?: TrackOptions
 ): Promise<Array<{ propertyName: string; propertyType: string; children?: any }>>
 
 interface TrackOptions {
-  outputReference?: string;  // which gateway output the payload was bound for; absent = gateway checkpoint
-  originHint?: string;       // low-cardinality label of the source the event came from
-  appVersion?: string;       // per-event app version override (see the rule in Section 7.3.6)
+  outputReference?: string;
+  originHint?: string;
+  originAppVersion?: string;
 }
 ```
 
@@ -201,8 +216,8 @@ interface TrackOptions {
 
 #### 4.2.1 `options` — Gateway Track Options
 
-`options` is an OPTIONAL trailing parameter (a plain object / record / options class, language-
-idiomatic) that lets an SDK be used with a **gateway-scoped** Inspector API key. Avo's multi-gate
+The gateway coordinates are OPTIONAL trailing inputs that let an SDK be used with a
+**gateway-scoped** Inspector API key. Avo's multi-gate
 model issues one Inspector API key per *gateway* (e.g. one tag-manager container or one backend
 event router that fans events out to several destinations) instead of one Inspector source per
 destination, and labels each observation with two coordinates:
@@ -211,20 +226,35 @@ destination, and labels each observation with two coordinates:
 |---|---|---|
 | `outputReference` | string | Reference of the gateway **output** (destination checkpoint) this observation was bound for, as shown in Avo (e.g. `"meta-x7k2q"`). Absent = the observation was taken at the **gateway** checkpoint (after gateway-level transformations, before any output's). Present = that output's checkpoint (after that output's transformations). |
 | `originHint` | string | Low-cardinality label identifying which **source** the event came from (e.g. `"web"`, `"ios"`, `"android"`); the value is mapped to an Avo source in the Avo UI. It **MUST NOT** be a user identifier or any other high-cardinality value. This is a documentation rule for SDK README/API docs; SDKs do not validate it at runtime. |
-| `appVersion` | string | App version of the source that produced **this event**, overriding the instance's `version` per the rule in Section 7.3.6. |
+| `originAppVersion` | string | App version of the source that produced **this event**, overriding the instance's `version` per the rule in Section 7.3.6. Named for whose version it carries: `originHint` says which source, `originAppVersion` says that source's version. It sets the event's `appVersion` on the wire — the wire field keeps its own name (Section 7.3.1). |
 
 **API requirements:**
 
-- Adding `options` MUST NOT break existing call sites: it is trailing and optional (in a language
-  without optional parameters, keep the existing three-parameter signature and add a four-parameter
-  overload that the three-parameter one delegates to). A call without `options`, or with an empty
-  options object, MUST produce a wire body identical to the 2.0.0 body.
-- `options` is read **per call**: each call's values apply only to the event enqueued by that call.
+**Which shape to implement (normative).** The three coordinates are the same inputs carrying the
+same values in either shape, and they produce a byte-identical wire body. What differs is only how
+they appear at a call site, so the choice follows the target language:
+
+| Does the target language have named / keyword arguments? | Required shape |
+|---|---|
+| **Yes** — Python, Ruby, Kotlin, Swift, C#, and similar | The three are **top-level optional parameters** on the track method. A caller writes `originAppVersion: "4.2.0"` at the call site and an IDE surfaces the names directly. |
+| **No** — JavaScript/TypeScript, Go, Java, and similar | The three are grouped in **one optional options object / struct / record** parameter. Positional parameters would force callers to pass placeholders to reach the last one. |
+
+Both shapes are conformant. An SDK MUST NOT be judged non-conformant for implementing the shape its
+language calls for, and the conformance suite asserts only the wire body, which does not distinguish
+them. Where a language is genuinely ambiguous, prefer the shape an idiomatic library in that
+ecosystem would expose; record the choice in the SDK's README so a reader knows which to expect.
+
+- Adding the coordinates MUST NOT break existing call sites: they are trailing and optional. In a
+  language without optional parameters, keep the existing three-parameter signature and add an
+  overload that it delegates to — adding parameters to the existing method would change its
+  signature and break already-compiled consumers. A call that supplies none of the three, or an
+  empty options object, MUST produce a wire body identical to the 2.0.0 body.
+- They are read **per call**: each call's values apply only to the event enqueued by that call.
   Two calls for the same event with different `outputReference` values are two distinct
   observations and MUST both be sent (there is no deduplication in server SDKs; gated by the
   `batch-7` fixture).
 - Value normalization and the wire mapping are normative in Section 7.3.6.
-- `options` MUST NOT affect `extractSchema`, sampling, batching, or `streamId` handling.
+- They MUST NOT affect `extractSchema`, sampling, batching, or `streamId` handling.
 
 **Network errors and timeouts:** Network failures are swallowed inside the internal send handler.
 `trackSchemaFromEvent` MUST resolve with the extracted event schema even when the HTTP call
@@ -543,7 +573,7 @@ These fields MUST be present on every event object:
 |---|---|---|
 | `apiKey` | string | The Inspector API key passed to the constructor. Also sent in the `api-key` request header, which is the copy the endpoint authenticates on (Section 7.2); the body copy MUST still be present. |
 | `appName` | string | `appName` constructor option (empty string `""` if not provided). |
-| `appVersion` | string \| null | The `version` constructor option, unless overridden per event by `options.appVersion`. A literal JSON `null` ONLY when `options.originHint` is set and no usable `options.appVersion` was provided (rule in Section 7.3.6). The key is always present. |
+| `appVersion` | string \| null | The `version` constructor option, unless overridden per event by `options.originAppVersion`. A literal JSON `null` ONLY when `options.originHint` is set and no usable `options.originAppVersion` was provided (rule in Section 7.3.6). The key is always present. |
 | `libVersion` | string | SDK library version. MUST be a plain SemVer string (e.g., `"1.2.0"`). No suffix. See Section 7.3.3 for canonical version file guidance. |
 | `env` | string | One of `"dev"`, `"staging"`, `"prod"` (exact wire values from `AvoInspectorEnv`). Also sent in the `env` request header, which is the copy the endpoint reads (Section 7.2); the body copy MUST still be present. |
 | `libPlatform` | string | Identifies the SDK platform/language (e.g., `"node"`, `"ruby"`, `"python"`, `"go"`). MUST be a non-empty string and MUST equal the `X-Avo-Client` request header value (Section 7.2). |
@@ -708,11 +738,11 @@ ordinary property: it stays in `eventProperties` untouched and does not populate
   when absent, **omit the key entirely** — never send `null` or `""`.
 - `appVersion` (always present as a key) is resolved per event:
 
-  | `originHint` (normalized) | `options.appVersion` (normalized) | wire `appVersion` |
+  | `originHint` (normalized) | `options.originAppVersion` (normalized) | wire `appVersion` |
   |---|---|---|
-  | present | present | `options.appVersion` |
+  | present | present | `options.originAppVersion` |
   | present | absent | `null` — the instance's configured version never applies to a source-scoped event |
-  | absent | present | `options.appVersion` |
+  | absent | present | `options.originAppVersion` |
   | absent | absent | the instance's `version` (unchanged 2.0.0 behavior) |
 
   Rationale: an event carrying `originHint` came from a *different* source than the app this SDK

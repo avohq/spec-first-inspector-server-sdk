@@ -129,7 +129,7 @@ step 3 and the `input` row above:
   "eventName": "Event Name",
   "eventProperties": { "key": "value" },
   "streamId": "optional-stream-id",
-  "options": { "outputReference": "meta-x7k2q", "originHint": "android", "appVersion": "4.2.0" }
+  "options": { "outputReference": "meta-x7k2q", "originHint": "android", "originAppVersion": "4.2.0" }
 }
 ```
 

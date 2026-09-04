@@ -316,7 +316,7 @@ export class AvoInspector {
    * @param {string} eventName - The tracked event name.
    * @param {*} eventProperties - The event properties to extract a schema from.
    * @param {string} [streamId] - Optional stream identifier (§4.2/§8.2).
-   * @param {{ outputReference?: string, originHint?: string, appVersion?: string }} [options] -
+   * @param {{ outputReference?: string, originHint?: string, originAppVersion?: string }} [options] -
    *   Optional gateway coordinates and per-event appVersion override (§4.2.1, §7.3.6).
    * @returns {Promise<Array>} Resolves with the extracted schema (or [] on a non-200 immediate send).
    */
@@ -352,7 +352,7 @@ export class AvoInspector {
       // /inspector/v2/track accepts it and records the observation as "unversioned".
       const outputReference = normalizeHint(options?.outputReference);
       const originHint = normalizeHint(options?.originHint);
-      const perEventAppVersion = normalizeHint(options?.appVersion);
+      const perEventAppVersion = normalizeHint(options?.originAppVersion);
       const resolvedAppVersion =
         originHint !== undefined
           ? (perEventAppVersion ?? null) // source-scoped: instance version never applies

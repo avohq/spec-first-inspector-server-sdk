@@ -141,7 +141,7 @@ value (e.g. `"appVersion": null` in `wire-10`) requires a literal JSON `null` on
     "eventName": "string",
     "eventProperties": {},
     "streamId": "string (optional)",
-    "options": { "outputReference": "string (optional)", "originHint": "string (optional)", "appVersion": "string (optional)" }
+    "options": { "outputReference": "string (optional)", "originHint": "string (optional)", "originAppVersion": "string (optional)" }
   },
   "precondition": { "samplingRate": 1.0 },
   "mock_response": { "status": 200, "body": { "samplingRate": 1.0 } },

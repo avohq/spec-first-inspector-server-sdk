@@ -129,8 +129,8 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   For `outputReference` and `originHint`, absent means the wire key is OMITTED. `appVersion` is
   never omitted — the key is always present and resolves per the four-cell rule below
   (SPEC.md §7.3.6).
-- [ ] Wire `appVersion` follows the four-cell rule: `options.appVersion` when provided; a literal
-  JSON `null` when `originHint` is set and no usable `options.appVersion` was given; otherwise the
+- [ ] Wire `appVersion` follows the four-cell rule: `options.originAppVersion` when provided; a literal
+  JSON `null` when `originHint` is set and no usable `options.originAppVersion` was given; otherwise the
   constructor `version`. The key is always present. A `null` `appVersion` is accepted by the
   endpoint and recorded as `unversioned`, so the SDK MUST NOT suppress, substitute, or drop the
   event, and no warning is required (SPEC.md §7.3.6).
@@ -427,8 +427,8 @@ absent, empty, or whitespace-only. They never enter the schema, and `options` ar
 
 ### AC-27 — Per-event `appVersion` rule (SPEC.md §7.3.1, §7.3.6)
 
-Wire `appVersion` is `options.appVersion` when provided (trimmed); a literal JSON `null` when
-`originHint` is set and no usable `options.appVersion` was given; otherwise the constructor
+Wire `appVersion` is `options.originAppVersion` when provided (trimmed); a literal JSON `null` when
+`originHint` is set and no usable `options.originAppVersion` was given; otherwise the constructor
 `version`. The key is always present. A resolved `null` is a valid observation — the endpoint
 records it as `unversioned` — so the SDK sends it unchanged and neither drops the event nor is
 required to warn (`wire-10`, `wire-12`, `wire-13`).
