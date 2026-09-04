@@ -20,7 +20,7 @@ mock server and `AVO_INSPECTOR_MOCK_ENDPOINT`, and every captured request must c
 | `batch-4` | **`maxQueueSize` FIFO overflow.** `maxQueueSize: 2`; appending a 3rd event drops the oldest; the flushed batch is `[E2, E3]`. |
 | `batch-5` | **Non-200 is not re-queued.** `batchSize: 2` with per-call `mock_responses` `[500, 200]`; the failed first batch is NOT resent in the second call. |
 | `batch-6` | **Concurrency: atomic swap-and-clear.** `trackN` fires 200 concurrent tracks then `flush()`; the captured union MUST be exactly 200 events with unique `messageId`s (no lost / duplicated / torn events). |
-| `batch-7` | **Per-event gateway options.** Three `track` steps for the *same* event name and schema — `{ outputReference: "meta-x7k2q", appVersion: "4.2.0" }`, `{ outputReference: "ga4-z9k1p", originHint: "android" }`, and no `options` — then `flush()`; one batch of exactly 3 events, each carrying its own `outputReference` (or none), identical `eventProperties`, and its own per-event `appVersion` (`"4.2.0"` override / literal `null` / constructor `"1.0.0"`) that MUST survive batch serialization; no deduplication (SPEC.md §4.2.1, §7.3.6, §12.7). |
+| `batch-7` | **Per-event gateway options.** Three `track` steps for the *same* event name and schema — `{ outputReference: "meta-x7k2q", originAppVersion: "4.2.0" }`, `{ outputReference: "ga4-z9k1p", originHint: "android" }`, and no `options` — then `flush()`; one batch of exactly 3 events, each carrying its own `outputReference` (or none), identical `eventProperties`, and its own per-event `appVersion` (`"4.2.0"` override / literal `null` / constructor `"1.0.0"`) that MUST survive batch serialization; no deduplication (SPEC.md §4.2.1, §7.3.6, §12.7). |
 
 ## How it works
 

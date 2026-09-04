@@ -15,11 +15,11 @@ and correctly handles `streamId` edge cases.
 | `wire-6` | Large body (≥ 1024 bytes) — MUST be gzip-compressed on any gzip-capable runtime (SPEC.md §7.3.5); transparent after gunzip |
 | `wire-7` | Small body (< 1024 bytes) — MUST be sent uncompressed (no `Content-Encoding` header) |
 | `wire-8` | Batching — `env: staging` + `batchSize: 30`; one tracked event is buffered, not sent (0 HTTP calls before flush) (SPEC.md §12) |
-| `wire-9` | Gateway fields — `options.outputReference` + `originHint` + `appVersion` all set, all padded → all three on the wire as top-level siblings of `eventProperties`, trimmed, with internal line terminators preserved (SPEC.md §4.2.1, §7.3.6) |
-| `wire-10` | `originHint` set (padded, trimmed on the wire) with no `appVersion` → `appVersion` is a literal `null`; `outputReference` absent (SPEC.md §7.3.6 table row 2) |
-| `wire-11` | `outputReference` + `appVersion` set (padded, trimmed), no `originHint` → `appVersion` overrides the constructor version; `originHint` absent (SPEC.md §7.3.6 table row 3) |
-| `wire-12` | Empty / whitespace-only options → both gateway keys absent (never `null` / `""`), `appVersion` falls back to the constructor version; body identical to the no-options shape (SPEC.md §7.3.6 table row 4) |
-| `wire-13` | Property-name collision — event properties literally named `outputReference` / `originHint` / `appVersion` stay in the schema untouched while the top-level gateway fields come from `options` only (SPEC.md §7.3.6) |
+| `wire-9` | Gateway fields — `options.outputReference` + `originHint` + `originAppVersion` all set, all padded → all three on the wire as top-level siblings of `eventProperties`, trimmed, with internal line terminators preserved (SPEC.md §4.2.1, §7.3.6) |
+| `wire-10` | `originHint` set (padded, trimmed on the wire) with no `originAppVersion` → the wire `appVersion` is a literal `null`; `outputReference` absent (SPEC.md §7.3.6 table row 2) |
+| `wire-11` | `outputReference` + `originAppVersion` set (padded, trimmed), no `originHint` → the wire `appVersion` overrides the constructor version; `originHint` absent (SPEC.md §7.3.6 table row 3) |
+| `wire-12` | Empty / whitespace-only options → both gateway keys absent (never `null` / `""`), the wire `appVersion` falls back to the constructor version; body identical to the no-options shape (SPEC.md §7.3.6 table row 4) |
+| `wire-13` | Property-name collision — event properties literally named `outputReference` / `originHint` / `appVersion` (the **wire** field names) stay in the schema untouched while the top-level gateway fields come from the options only (SPEC.md §7.3.6) |
 
 > **Batching coverage.** The `dev` fixtures (`wire-1`–`wire-7`, all `env: "dev"`) run with
 > `batchSize` forced to 1, so they also serve as the automated check for the immediate-send
