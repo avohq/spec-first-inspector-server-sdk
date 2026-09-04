@@ -33,7 +33,15 @@ Node.js ES module (`.mjs`). Depends on `ajv` (draft 2020-12 build, imported from
   appears, and the type / format / enum of every non-placeholder value. It does NOT check the
   four placeholder values themselves — those are literal markers, and the suite runner asserts
   their real values against the captured request at run time.
-- Absent arrays are coerced to empty via `?? []`, so a fixture lacking the relevant field is skipped, not failed.
+- A fixture that omits an optional container entirely is skipped, not failed: `expected_request_body`
+  and `expected_request_bodies` are absent for fixtures that expect no request, and the suite checks
+  for the key before reading it.
+- A container that is PRESENT but not an array is a fixture error, not a skip. `requireArray()` reports
+  it in the `[FAIL]` format and sets the exit status, rather than defaulting to `[]` and certifying a
+  malformed fixture with zero checks. This applies to each inner batch of `expected_request_bodies`
+  as well as to the outer array.
+- Only `eventProperties` is coerced with `?? []`, since an event with no properties legitimately omits
+  it.
 
 ## Non-functional requirements
 

@@ -25,6 +25,11 @@ const LIB_VERSION = "1.1.0"; // plain SemVer, no suffix (SPEC §7.3.3)
 const LIB_PLATFORM = "node"; // <sdk-platform> (SPEC §7.3.1)
 const PROD_ENDPOINT = "https://api.avo.app/inspector/v2/track";
 const VALID_ENVS = new Set(["dev", "staging", "prod"]);
+// §4.1 / §7.2: CR, LF and NUL delimit or terminate header fields, so a value
+// carrying one can inject headers or split the request. Checked by the SDK
+// itself rather than delegated to the HTTP client, whose behavior varies by
+// runtime — Node happens to reject these, other runtimes do not.
+const HEADER_CONTROL_CHARS = /[\r\n\u0000]/;
 const GZIP_THRESHOLD_BYTES = 1024; // SPEC §7.3.5
 const REQUEST_TIMEOUT_MS = 10_000; // SPEC §7.6
 const DEFAULT_FLUSH_TIMEOUT_MS = 10_000; // SPEC §4.6
@@ -203,6 +208,14 @@ export class AvoInspector {
     // §4.1 constructor validation (throws synchronously).
     if (typeof apiKey !== "string" || apiKey.trim() === "") {
       throw new Error("[Avo Inspector] No API key provided. Inspector can't operate without API key.");
+    }
+    // §4.1: the apiKey travels in a request header, so a CR / LF / NUL in it can
+    // inject headers or split the request. Rejected here so the mistake fails
+    // loudly at startup; §7.2 independently refuses the send (see sendBatch).
+    if (HEADER_CONTROL_CHARS.test(apiKey)) {
+      throw new Error(
+        "[Avo Inspector] API key contains a control character. The API key is sent as a request header and cannot contain CR, LF, or NUL.",
+      );
     }
     if (typeof version !== "string" || version.trim() === "") {
       throw new Error(
@@ -471,6 +484,29 @@ export class AvoInspector {
       env: this.env,
       "X-Avo-Client": LIB_PLATFORM,
     };
+
+    // §7.2: refuse to transmit any header value containing CR, LF or NUL. The
+    // constructor already rejects such an apiKey, so this is the deliberate
+    // second guard the spec requires: it protects the wire even if a value
+    // reaches the header map another way. On a violation the batch is dropped and
+    // logged (§7.5) — never stripped, escaped or substituted, since silently
+    // rewriting an API key would send a different key than the caller configured.
+    const unsafeHeader = Object.entries(headers).find(
+      ([, value]) => typeof value === "string" && HEADER_CONTROL_CHARS.test(value),
+    );
+    if (unsafeHeader) {
+      // §7.5.1: log the header NAME only. The offending value is or derives from
+      // the apiKey, which must never reach a log line.
+      if (_shouldLog) {
+        console.error(
+          `[Avo Inspector] Refusing to send: header "${unsafeHeader[0]}" contains CR, LF, or NUL. Batch dropped.`,
+        );
+      }
+      // A refused send is a local failure, not an HTTP outcome: the batch is
+      // dropped and never re-queued, and trackSchemaFromEvent still resolves with
+      // the extracted schema (§7.5). "non200" would wrongly resolve it with [].
+      return { status: "error" };
+    }
 
     // §7.3.5 gzip when serialized body >= 1024 bytes (UTF-8 byte length).
     let payload = rawBytes;

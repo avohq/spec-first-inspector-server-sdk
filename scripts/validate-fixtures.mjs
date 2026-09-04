@@ -117,7 +117,7 @@ const requireArray = (suite, fixtureId, value, key) => {
   if (!Array.isArray(value)) {
     failures += 1;
     console.error(
-      `[FAIL] ${suite} / ${fixtureId} — ${key}: expected an array, got ${value === undefined ? "missing key" : typeof value}`,
+      `[FAIL] ${suite} / ${fixtureId} — ${key}: expected an array, got ${value === undefined ? "missing key" : value === null ? "null" : typeof value}`,
     );
     return null;
   }
@@ -180,7 +180,13 @@ for (const f of batching) {
   const expectedBatches = requireArray("batching", f.fixture_id, f.expected_request_bodies, "expected_request_bodies");
   if (!expectedBatches) continue;
   expectedBatches.forEach((batch, b) => {
-    (batch ?? []).forEach((body, e) => {
+    // Each element is itself a batch (an array of event objects) per the runner
+    // contract. Validate before iterating: a fixture carrying an object, a string
+    // or a number here used to throw a TypeError and abort the whole run, which
+    // loses every later fixture and reports nothing in the [FAIL] format.
+    const events = requireArray("batching", f.fixture_id, batch, `expected_request_bodies[${b}]`);
+    if (!events) return;
+    events.forEach((body, e) => {
       checkBody("batching", f.fixture_id, body, `expected_request_bodies[${b}][${e}]`);
       (body?.eventProperties ?? []).forEach((prop, i) => {
         if (!validateProp(prop)) {
