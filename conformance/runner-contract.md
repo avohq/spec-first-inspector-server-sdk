@@ -201,6 +201,11 @@ Each element of `steps` is one action, executed in order on the same instance:
 | `expected_request_bodies` | An array of expected batch bodies; each element is itself an array of event objects (one batch = one HTTP call). Each event is format-validated for placeholder fields (`<uuid-v4>`, `<iso8601>`, `<semver>`, `<sdk-platform>`) exactly as in the wire-protocol suite. Batches are matched as an **unordered multiset**: each expected batch MUST match exactly one captured batch by contents, but batch **arrival order is NOT asserted** (a fire-and-forget SDK MAY dispatch a size-triggered batch and a later `flush()` batch concurrently, so SPEC §12 does not require in-order delivery). |
 | `expected_event_union_count` | The total number of event objects across **all** captured batches (order-independent union) MUST equal this value. Used with `trackN` to assert no events are lost or duplicated under concurrency, where batch boundaries are nondeterministic. |
 | `expected_unique_message_ids` | When `true`, every `messageId` across all captured events MUST be present and **unique** — no duplicates (no event sent twice) and the count of distinct `messageId`s MUST equal `expected_event_union_count`. Together these pin the atomic swap-and-clear invariant (SPEC.md §3.1, §12.4). |
+| `expected_request_headers` | Optional. Asserted against **every** captured request exactly as in the wire-protocol suite — see [`expected_request_headers` assertions](#expected_request_headers-assertions). A sequence that makes several calls therefore asserts the block once per batch (`batch-1` uses this to pin `env: "staging"` on both of its batches). |
+
+The SPEC.md §7.2 required headers (`api-key`, `env`, `x-avo-client`) are asserted on every captured
+request in this mode too, whether or not the fixture declares `expected_request_headers` — see
+[Required request headers](#required-request-headers).
 
 **Output envelope.** For a sequence, `actual` is an array with one entry per step —
 `{ "action": "track"|"trackN"|"flush"|"destroy", "outcome": "resolve"|"reject", "value": <value or reason> }`
@@ -535,7 +540,8 @@ fixture's `constructor` block; a fixture pins those with `expected_request_heade
 
 ### `expected_request_headers` assertions
 
-A wire-protocol fixture MAY include an `expected_request_headers` object. When present, the
+A fixture in **any** mode MAY include an `expected_request_headers` object — the field is not
+specific to the wire-protocol suite, and `batch-1` uses it in sequence mode. When present, the
 suite runner MUST assert each entry against the headers of every recorded request (header names
 are matched case-insensitively). Each value is one of:
 

@@ -179,12 +179,6 @@ paths:
               example:
                 ok: false
                 error: "Missing api-key header"
-        "401":
-          description: Unauthorized. Invalid API key in the `api-key` request header.
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Rate limited.
           content:

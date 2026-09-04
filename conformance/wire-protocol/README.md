@@ -25,8 +25,10 @@ and correctly handles `streamId` edge cases.
 > `batchSize` forced to 1, so they also serve as the automated check for the immediate-send
 > (`batchSize == 1`) batching path, and `wire-8` covers buffered-not-sent. Multi-event batching
 > (size-trigger flush, `flush()` drain, `destroy()` discard, `maxQueueSize` overflow, non-200
-> no-requeue) is automated by the dedicated [`batching` suite](../batching/README.md); the few
-> remaining SHOULD-level behaviors (time/idle flush, transient re-queue) are in the manual matrix in
+> no-requeue) is automated by the dedicated [`batching` suite](../batching/README.md); the two
+> behaviors that need a controllable clock or a connection-drop mock — the SHOULD-level time/idle
+> flush (SPEC.md §12.3) and the MUST-level transient send-failure drop (SPEC.md §12.5, where the
+> batch MUST NOT be re-queued or retried) — are in the manual matrix in
 > [`../README.md`](../README.md).
 
 ## Required Request Headers
