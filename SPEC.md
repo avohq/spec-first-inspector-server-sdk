@@ -97,8 +97,8 @@ server-side-only requirements; browser/client-side concerns do not apply.
 - `sessionId` is **not part of the wire body** and implementations SHOULD NOT send it. Correlation
   that a caller wants across events belongs in `streamId`. **Read the dated note in Section 7.1
   before dropping the field from a sender that is already in production** — until the ingestion
-  change described there ships, an event sent without `sessionId` is accepted with `200` and then
-  silently discarded.
+  change described there ships, an event sent without `sessionId` is answered `200`, is discarded
+  before storage, and reports nothing back to the sender that would distinguish it from success.
 - Implementations MUST NOT include `visitorId` or `userId` in the wire body.
 - AI coding agents generating SDKs MUST NOT add browser-style session tracking. There is no session
   concept to model here, and reintroducing `sessionId` as a generated value would attach a
@@ -513,10 +513,15 @@ override replaces the request URL only — every header required by Section 7.2 
 > now supplies the value instead of requiring every sender to pad one in. **Both ingestion parsers
 > still REQUIRE the field today.** The v1 fast path guards on its presence and drops the event
 > outright, and the public parser used by v2 decodes it as a required field, which throws and
-> discards the event when it is absent. The request still answers `200 {"success":true}` in both
-> cases, so a sender that drops the field before ingestion accepts its absence loses **every
-> event, silently** — the precise failure that made the field required in 2.0.0 in the first
-> place. The ingestion change that defaults the field is in flight; it **MUST** ship before any
+> discards the event when it is absent. The status stays `200` and the sender sees success, so a
+> sender that drops the field before ingestion accepts its absence loses **every event** it sends.
+> The loss is not literally silent — both paths write a decode warning to the server's own logs,
+> and one of them additionally answers with a body carrying `ok: false` and a decode-failure count
+> at status `200` — but **no signal reaches the sender**: none of it is per-sender, nothing alerts
+> on it, and an SDK that reads the HTTP status sees an ordinary success. That is the precise
+> failure that made the field required in 2.0.0 in the first place.
+>
+> The ingestion change that defaults the field is in flight; it **MUST** ship before any
 > sender generated from this release reaches production, and confirming that it has is a release
 > gate rather than an assumption this document can make on anyone's behalf. Until it is confirmed,
 > a sender already running in production SHOULD keep sending `sessionId: ""`. That remains

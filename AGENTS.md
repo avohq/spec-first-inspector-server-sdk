@@ -128,8 +128,8 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   `trackingId`, `visitorId`, `userId` — MUST NOT be sent.
   `sessionId` — removed in 3.0.0; the endpoint supplies it. SDKs SHOULD NOT send it. Read the
   dated ingestion note in SPEC.md §7.1 before dropping it from a sender already in production:
-  ingestion still requires it today, and an event without it is accepted with `200` and then
-  silently discarded.
+  ingestion still requires it today, and an event without it is answered `200`, discarded before
+  storage, and reported back to the sender in no way that distinguishes it from success.
 
   **Optional gateway fields (present ONLY when the caller supplied a non-blank value):**
   `outputReference`, `originHint` — top-level siblings of `eventProperties`, never inside the

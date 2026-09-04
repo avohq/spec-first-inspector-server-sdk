@@ -165,7 +165,7 @@ that carries correlation between events. A server SDK has no session to report, 
 constant into every event to satisfy a parser.
 
 **Why it was ever required, so nobody reinstates it.** 2.0.0 added it after empirical bisection:
-the ingestion pipeline silently DROPPED events whose body omitted `sessionId`, answering
+the ingestion pipeline DROPPED events whose body omitted `sessionId`, answering
 `200 {"success":true}` while the event never reached the dashboard. Adding `sessionId: ""` was
 found to be necessary and sufficient for delivery. That is a parser requirement, not a modeling
 one, and it now belongs where it always should have — the endpoint supplies the value, and senders
@@ -174,8 +174,11 @@ stop carrying it.
 > **Sequencing — this one can lose data.** Both ingestion parsers still REQUIRE the field as of
 > 2026-09-04. The v1 fast path guards on its presence and drops the event; the public parser used
 > by v2 decodes it as a required field, which throws and discards the event when it is absent.
-> Both answer `200`. **A sender that drops `sessionId` before ingestion accepts its absence loses
-> every event, silently** — the exact failure that made the field required in the first place. The
+> Both answer `200` and the sender sees success. **A sender that drops `sessionId` before
+> ingestion accepts its absence loses every event it sends** — the exact failure that made the
+> field required in the first place. The loss is not literally silent: both paths log a decode
+> warning server-side and one returns a body carrying `ok: false` at status `200`. But nothing
+> reaches the sender, none of it is per-sender, and nothing alerts on it. The
 > ingestion change that defaults it is in flight and **MUST** ship first. Confirming that it has is
 > a release gate: it belongs to whoever owns the backend change, and nothing in this repository can
 > verify it. Until it is confirmed, a sender already running in production should keep sending
