@@ -151,13 +151,27 @@ const FORBIDDEN_WIRE_FIELDS = new Set(["trackingId", "visitorId", "userId"]);
 // Exact wire values of the `env` header / body field (SPEC §6.1).
 const VALID_ENVS = new Set(["dev", "staging", "prod"]);
 
+// The one `Content-Type` a server SDK may send (SPEC §7.2). `text/plain` is the
+// browser-SDK preflight workaround and is additionally unsafe on
+// /inspector/v2/track, so it is a hard failure here rather than a warning.
+const REQUIRED_CONTENT_TYPE = "application/json";
+
 /**
  * Assert the headers SPEC §7.2 makes REQUIRED on every request to
  * /inspector/v2/track. Enforced by the runner on EVERY captured request — like
  * FORBIDDEN_WIRE_FIELDS — so an SDK that omits or mislabels them fails conformance
- * even for a fixture that declares no `expected_request_headers`. `X-Avo-Client`
- * identifies the sender, so it must also equal the `libPlatform` of every event in
- * the request it accompanies.
+ * even for a fixture that declares no `expected_request_headers`.
+ *
+ * Four of the five §7.2 REQUIRED headers are checked here: `api-key`, `env`,
+ * `X-Avo-Client` and `Content-Type`. `Content-Length` is not, because it is set by
+ * the HTTP stack rather than by SDK code and a legitimately chunked request omits
+ * it; it stays in the manual matrix.
+ *
+ * Three of them must also agree with the body they accompany, because all three
+ * come from the same constructor options that produce the body fields (§7.3.1):
+ * `x-avo-client` = every event's `libPlatform`, `api-key` = every event's `apiKey`,
+ * `env` = every event's `env`. Without these an SDK could send a well-formed header
+ * set that describes a different instance than the body does.
  * @param {Array<{ headers?: Object, body?: * }>} requests - Captured requests from the mock.
  * @returns {{ ok: boolean, reason?: string }} ok:true when every request is well-formed.
  */
@@ -176,12 +190,35 @@ function assertRequiredHeaders(requests) {
     if (typeof client !== "string" || client.length === 0) {
       return { ok: false, reason: `required header x-avo-client missing or empty (SPEC §7.2)` };
     }
+    // `Content-Type` may carry parameters (e.g. "application/json; charset=utf-8");
+    // the media type is what SPEC §7.2 pins.
+    const contentType = headers["content-type"];
+    const mediaType = typeof contentType === "string" ? contentType.split(";")[0].trim().toLowerCase() : undefined;
+    if (mediaType !== REQUIRED_CONTENT_TYPE) {
+      return {
+        ok: false,
+        reason: `required header content-type must be ${REQUIRED_CONTENT_TYPE}, got "${contentType ?? "absent"}" (SPEC §7.2)`,
+      };
+    }
     if (Array.isArray(req.body)) {
       for (const event of req.body) {
-        if (event && typeof event === "object" && typeof event.libPlatform === "string" && event.libPlatform !== client) {
+        if (!event || typeof event !== "object") continue;
+        if (typeof event.libPlatform === "string" && event.libPlatform !== client) {
           return {
             ok: false,
             reason: `header x-avo-client "${client}" != libPlatform "${event.libPlatform}" (SPEC §7.2)`,
+          };
+        }
+        if (typeof event.apiKey === "string" && event.apiKey !== apiKey) {
+          return {
+            ok: false,
+            reason: `header api-key "${apiKey}" != body apiKey "${event.apiKey}" (SPEC §7.2, §7.3.1)`,
+          };
+        }
+        if (typeof event.env === "string" && event.env !== env) {
+          return {
+            ok: false,
+            reason: `header env "${env}" != body env "${event.env}" (SPEC §7.2, §7.3.1)`,
           };
         }
       }

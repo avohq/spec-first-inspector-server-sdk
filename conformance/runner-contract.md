@@ -203,7 +203,7 @@ Each element of `steps` is one action, executed in order on the same instance:
 | `expected_unique_message_ids` | When `true`, every `messageId` across all captured events MUST be present and **unique** — no duplicates (no event sent twice) and the count of distinct `messageId`s MUST equal `expected_event_union_count`. Together these pin the atomic swap-and-clear invariant (SPEC.md §3.1, §12.4). |
 | `expected_request_headers` | Optional. Asserted against **every** captured request exactly as in the wire-protocol suite — see [`expected_request_headers` assertions](#expected_request_headers-assertions). A sequence that makes several calls therefore asserts the block once per batch (`batch-1` uses this to pin `env: "staging"` on both of its batches). |
 
-The SPEC.md §7.2 required headers (`api-key`, `env`, `x-avo-client`) are asserted on every captured
+The SPEC.md §7.2 required headers (`api-key`, `env`, `x-avo-client`, `content-type`) are asserted on every captured
 request in this mode too, whether or not the fixture declares `expected_request_headers` — see
 [Required request headers](#required-request-headers).
 
@@ -522,21 +522,32 @@ fixtures to ensure each fixture starts with a clean request log.
 
 ### Required request headers
 
-SPEC.md §7.2 makes three headers REQUIRED on every request to the Inspector API. The suite runner
-asserts them on **every** captured request, in every suite, independently of any
+SPEC.md §7.2 makes five headers REQUIRED on every request to the Inspector API. The suite runner
+asserts four of them on **every** captured request, in every suite, independently of any
 `expected_request_headers` block — the same way it rejects a body carrying a forbidden identifier
 field. An SDK that omits them fails conformance even against a fixture that declares no header
 expectations:
 
 | Header | Runner assertion |
 |---|---|
-| `api-key` | Present and a non-empty string. |
-| `env` | Present and exactly one of `dev` / `staging` / `prod`. |
-| `x-avo-client` | Present, a non-empty string, and equal to the `libPlatform` of every event in that same request's body (SPEC.md §7.2 — the header identifies the sender, so the two cannot disagree). |
+| `api-key` | Present, a non-empty string, and equal to the `apiKey` of every event in that same request's body. |
+| `env` | Present, exactly one of `dev` / `staging` / `prod`, and equal to the `env` of every event in that same request's body. |
+| `x-avo-client` | Present, a non-empty string, and equal to the `libPlatform` of every event in that same request's body. |
+| `content-type` | Present, and its media type is exactly `application/json` (parameters such as `; charset=utf-8` are ignored). A server SDK MUST NOT send `text/plain` — that is the browser-SDK CORS workaround, and `/inspector/v2/track` does not handle such a body correctly. |
 
-The runner does not assert the *values* of `api-key` and `env` here, because they depend on the
-fixture's `constructor` block; a fixture pins those with `expected_request_headers` (`wire-1` pins
-`env: "dev"`, `batch-1` pins `env: "staging"`, so a hardcoded value fails one of them).
+The fifth, `Content-Length`, is **not** asserted: it is produced by the HTTP stack rather than by
+SDK code, and a legitimately chunked request omits it. It stays in the manual matrix in
+[`../README.md`](./README.md).
+
+**Header/body agreement.** All three of `api-key`, `env` and `x-avo-client` are checked against the
+body they accompany, not just for well-formedness. Each of the three comes from the same
+constructor option that produces the corresponding body field (SPEC.md §7.3.1), so the header and
+the body necessarily name the same instance; without the cross-check an SDK could send a
+well-formed header set that describes a *different* instance than the body does, and pass.
+
+The runner does not assert the *literal values* of `api-key` and `env` here, because they depend on
+the fixture's `constructor` block; a fixture pins those with `expected_request_headers` (`wire-1`
+pins `env: "dev"`, `batch-1` pins `env: "staging"`, so a hardcoded value fails one of them).
 
 ### `expected_request_headers` assertions
 
@@ -648,9 +659,23 @@ Suite runners SHOULD produce a conformance report with the following structure p
 The harness contract follows the same versioning policy as the spec (`VERSIONING.md`). The
 contract version is `1.1.0` — additive: the optional `options` object on single-event
 `trackSchemaFromEvent` input and on `track` steps, the `"<absent>"` placeholder, placeholder values
-in `expected_request_headers`, and the always-on required-header assertions (all runner-side; the
-harness stdin/stdout envelope is unchanged, so a `1.0.0` harness needs no edit — only the SDK it
-drives must send the headers). `1.0.0` was
+in `expected_request_headers`, and the always-on required-header assertions.
+
+**What a `1.0.0` harness must change.** The additions split in two, and only one half is free:
+
+- **Runner-side, no harness edit.** The `"<absent>"` placeholder, placeholder values in
+  `expected_request_headers`, and the always-on required-header assertions are all evaluated by the
+  suite runner against captured mock traffic. A `1.0.0` harness needs no edit for them — but the
+  **SDK it drives** must send the four asserted headers, or every request-making fixture fails.
+- **Harness edit REQUIRED.** `options` is a new optional field on the input envelope
+  (`input.options` in single-event mode, `step.options` on a `track` step). A `1.0.0` harness
+  ignores it and calls `trackSchemaFromEvent` with at most three arguments, so it cannot pass
+  `wire-9` – `wire-13` or `batch-7`. Forward it verbatim as the fourth argument per
+  [`operation` values and `input` shapes](#operation-values-and-input-shapes); the implementation
+  checklist item is below.
+
+The output envelope and the exit-code semantics are unchanged, so no `1.0.0` behavior is
+invalidated — this is why the bump is MINOR and not MAJOR. `1.0.0` was
 the initial publication, which includes the optional batch configuration fields (`batchSize`,
 `batchFlushSeconds`, `maxQueueSize`, `disableBatchTimer`) in the `constructor` object, and the
 `sequence`-mode actions (`track`, `trackN`, `flush`, `destroy`) with the concurrency union

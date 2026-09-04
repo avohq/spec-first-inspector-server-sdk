@@ -432,7 +432,12 @@ components:
       properties:
         ok:
           type: boolean
-          description: Always false on an error response.
+          const: false
+          description: |
+            Always `false` on an error response — pinned as a constant so a generated validator
+            rejects a success-marked error body. The `400` shape is `{"ok": false, "error": "..."}`
+            (SPEC.md §7.4). The property stays OPTIONAL because the generic `429` / `500` responses
+            are not specified to carry it.
         error:
           type: string
           description: Human-readable error message.

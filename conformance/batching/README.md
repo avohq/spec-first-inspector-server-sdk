@@ -8,7 +8,7 @@ the runner contract — see [Multi-event sequence mode](../runner-contract.md#mu
 All fixtures use `env: "staging"` so `batchSize` is honored (under `env: "dev"` the SDK forces
 `batchSize = 1`, which disables batching). Like the wire-protocol suite, this suite requires the
 mock server and `AVO_INSPECTOR_MOCK_ENDPOINT`, and every captured request must carry the required
-`api-key` / `env` / `X-Avo-Client` headers (SPEC.md §7.2).
+`api-key` / `env` / `X-Avo-Client` / `Content-Type: application/json` headers (SPEC.md §7.2).
 
 ## Fixtures
 

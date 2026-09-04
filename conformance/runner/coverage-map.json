@@ -197,7 +197,7 @@
       ]
     },
     {
-      "behavior": "Required request headers on every captured request: api-key non-empty, env one of dev/staging/prod, X-Avo-Client non-empty and equal to the libPlatform of every event in that request",
+      "behavior": "Required request headers on every captured request: api-key non-empty, env one of dev/staging/prod, X-Avo-Client non-empty, Content-Type media type exactly application/json, and each of api-key / env / X-Avo-Client equal to the apiKey / env / libPlatform of every event in that request",
       "spec": [
         "SPEC.md §7.2",
         "runner-contract.md Required request headers"
@@ -206,7 +206,7 @@
         "wire-1",
         "batch-1"
       ],
-      "$note": "The runner asserts these on EVERY captured request in every suite, not only on the two fixtures that declare expected_request_headers. wire-1 pins the exact values api-key=test-key / env=dev and batch-1 pins env=staging, so an SDK that hardcodes either value fails one of them; X-Avo-Client is format-validated with <sdk-platform> because the token differs per SDK."
+      "$note": "The runner asserts these on EVERY captured request in every suite, not only on the two fixtures that declare expected_request_headers. wire-1 pins the exact values api-key=test-key / env=dev and batch-1 pins env=staging, so an SDK that hardcodes either value fails one of them; X-Avo-Client is format-validated with <sdk-platform> because the token differs per SDK. The three header/body equalities catch an SDK whose headers describe a different instance than its body does; Content-Type additionally rejects the text/plain browser-SDK workaround, which SPEC.md §7.2 forbids on v2. Content-Length is the fifth §7.2 REQUIRED header and is deliberately NOT asserted (set by the HTTP stack, legitimately absent on a chunked request) - see the manual entry."
     },
     {
       "behavior": "env-gated mock endpoint honored for dev/staging (fail-closed for prod); AVO_INSPECTOR_MOCK_ENDPOINT used as-is",
@@ -451,6 +451,14 @@
         "SPEC.md §7.5.1"
       ],
       "reason": "Logging is observed on stderr, not asserted by the fixtures. Verify via the SDK's own unit tests.",
+      "fixtures": []
+    },
+    {
+      "behavior": "Content-Length request header carries the byte length of the body actually sent (compressed length when Content-Encoding: gzip)",
+      "spec": [
+        "SPEC.md §7.2"
+      ],
+      "reason": "The fifth §7.2 REQUIRED header. Not asserted by the runner: it is produced by the HTTP stack rather than by SDK code, and a legitimately chunked request omits it, so an assertion would test the runtime's HTTP client and not the SDK. Verify out-of-band if an SDK builds requests by hand.",
       "fixtures": []
     }
   ]
