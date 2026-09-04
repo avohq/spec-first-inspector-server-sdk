@@ -144,7 +144,10 @@ and which source it came from (`originHint`; low-cardinality, never a user ident
   otherwise the constructor `version`.
 - The options are per call; two calls for the same event with different `outputReference` values
   are two observations and are both sent (no deduplication).
-- A call that supplies none of the three produces a body identical to the 2.0.0 body.
+- A call that supplies none of the three adds no keys: the body is exactly what this release
+  defines without them. That is **not** the 2.0.0 body — 3.0.0 also moves the endpoint and removes
+  `sessionId`, so the comparison that held while these coordinates were a 2.1.0 minor no longer
+  does.
 
 ### Removed: `sessionId` on the wire (SPEC.md §3.3, §7.3.1, §8.2)
 

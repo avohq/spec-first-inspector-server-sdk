@@ -257,7 +257,10 @@ the table above.
   language without optional parameters, keep the existing three-parameter signature and add an
   overload that it delegates to — adding parameters to the existing method would change its
   signature and break already-compiled consumers. A call that supplies none of the three, or an
-  empty options object, MUST produce a wire body identical to the 2.0.0 body.
+  empty options object, MUST produce exactly the body this release defines for a call without
+  them: the three add keys only when a caller supplies them and never alter any other field. That
+  body is **not** the 2.0.0 body — 3.0.0 also moves the endpoint (Section 7.1) and removes
+  `sessionId` (Section 3.3).
 - They are read **per call**: each call's values apply only to the event enqueued by that call.
   Two calls for the same event with different `outputReference` values are two distinct
   observations and MUST both be sent (there is no deduplication in server SDKs; gated by the

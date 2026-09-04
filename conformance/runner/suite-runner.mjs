@@ -219,9 +219,13 @@ const REQUIRED_CONTENT_TYPE = "application/json";
  * even for a fixture that declares no `expected_request_headers`.
  *
  * All five §7.2 REQUIRED headers are checked here: `api-key`, `env`, `X-Avo-Client`,
- * `Content-Type` and `Content-Length`. `Content-Length` is asserted by value against
- * the byte count the mock actually received, which is what catches an SDK that sends
- * the uncompressed JSON length alongside a gzipped body.
+ * `Content-Type` and `Content-Length`. `Content-Length` is asserted for PRESENCE and
+ * integer shape only — not by value. HTTP framing already enforces the value, because
+ * the server reads exactly `Content-Length` bytes: a length larger than the body (the
+ * real bug — sending the uncompressed JSON length alongside a gzipped body) stalls the
+ * request until the harness budget expires, and a smaller one truncates the body and
+ * fails JSON parsing. Neither can reach this function as a length disagreeing with what
+ * was received. See the inline note at the assertion itself.
  *
  * Three of them must also agree with the body they accompany, because all three
  * come from the same constructor options that produce the body fields (§7.3.1):

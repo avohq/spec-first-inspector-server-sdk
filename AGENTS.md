@@ -124,14 +124,18 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   **Optional gateway fields (present ONLY when the caller supplied a non-blank value):**
   `outputReference`, `originHint` — top-level siblings of `eventProperties`, never inside the
   schema, never sent as `null` or `""` (SPEC.md §7.3.6).
-- [ ] `trackSchemaFromEvent` accepts an OPTIONAL trailing `options` parameter (or overload) —
-  `{ outputReference?, originHint?, appVersion? }` — without breaking existing call sites; a call
-  without `options` produces a body identical to the 2.0.0 body (SPEC.md §4.2.1).
+- [ ] `trackSchemaFromEvent` accepts `outputReference`, `originHint` and `originAppVersion` as
+  OPTIONAL per-call inputs, without breaking existing call sites. The shape follows the target
+  language (SPEC.md §4.2.1) and BOTH are conformant: top-level optional parameters where the
+  language has named / keyword arguments, otherwise one optional options object or an overload.
+  A call that supplies none of the three adds no keys — the body is exactly what this release
+  defines without them. That is **not** the 2.0.0 body: 3.0.0 also moves the endpoint and removes
+  `sessionId`.
 - [ ] Each option value is normalized independently: trimmed; absent / `null` / empty /
   whitespace-only (and, in dynamically-typed languages, non-string) values are treated as absent.
-  For `outputReference` and `originHint`, absent means the wire key is OMITTED. `appVersion` is
-  never omitted — the key is always present and resolves per the four-cell rule below
-  (SPEC.md §7.3.6).
+  For `outputReference` and `originHint`, absent means the wire key is OMITTED. The **wire**
+  `appVersion` is never omitted — that key is always present and resolves per the four-cell rule
+  below, whether or not the `originAppVersion` option was supplied (SPEC.md §7.3.6).
 - [ ] Wire `appVersion` follows the four-cell rule: `options.originAppVersion` when provided; a literal
   JSON `null` when `originHint` is set and no usable `options.originAppVersion` was given; otherwise the
   constructor `version`. The key is always present. A `null` `appVersion` is accepted by the
@@ -435,7 +439,9 @@ language calls for.
 `outputReference` / `originHint` are sent as top-level siblings of `eventProperties` — trimmed, and
 OMITTED entirely (never `null` / `""`) when absent, empty, or whitespace-only. They never enter the
 schema, and the three are resolved per call (`wire-9` – `wire-13`, `batch-7`). A call that supplies
-none of them produces the 2.0.0 body.
+none of them adds no keys — the body is exactly what this release
+defines without them, which is **not** the 2.0.0 body (3.0.0 also moves the endpoint and removes
+`sessionId`).
 
 ### AC-27 — Per-event `appVersion` rule (SPEC.md §7.3.1, §7.3.6)
 
