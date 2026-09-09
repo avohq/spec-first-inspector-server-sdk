@@ -144,9 +144,17 @@ paths:
                     outputReference: "meta-x7k2q"
                     originHint: "android"
                     eventProperties:
+                      # list(object) means the array's first element was a non-null object, so
+                      # children carries one per-element SchemaEntry[] (SPEC.md §7.3.4, §9.3.4).
+                      # An empty children[] here would be unreachable: an empty array extracts
+                      # as list(string), and depth truncation yields object, never list(object).
                       - propertyName: "items"
                         propertyType: "list(object)"
-                        children: []
+                        children:
+                          - - propertyName: "sku"
+                              propertyType: "string"
+                            - propertyName: "quantity"
+                              propertyType: "int"
       responses:
         "200":
           description: |
