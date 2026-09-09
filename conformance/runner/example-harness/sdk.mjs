@@ -10,25 +10,44 @@
 // ever disagree, SPEC.md wins. Do NOT copy this verbatim into a production SDK —
 // generate your SDK from SPEC.md and prove it with the suite-runner.
 //
-// Implemented per SPEC.md: §4 (public API), §7 (wire protocol incl. §7.3.5 gzip,
-// §7.5 error taxonomy + at-most-once), §8 (UUID v4 / ISO-8601), §9 (schema
-// extraction), §12 (batching / flush / destroy / maxQueueSize FIFO).
+// Implemented per SPEC.md: §4 (public API incl. §4.2.1 gateway options), §7 (wire
+// protocol incl. §7.2 required headers, §7.3.5 gzip, §7.3.6 gateway fields +
+// per-event appVersion, §7.5 error taxonomy + at-most-once), §8 (UUID v4 /
+// ISO-8601), §9 (schema extraction), §12 (batching / flush / destroy /
+// maxQueueSize FIFO).
 // =============================================================================
 
 import { randomUUID } from "node:crypto";
 import { gzipSync } from "node:zlib";
 
-const HARNESS_CONTRACT_VERSION = "1.0.0";
-const LIB_VERSION = "1.0.0"; // plain SemVer, no suffix (SPEC §7.3.3)
+const HARNESS_CONTRACT_VERSION = "1.1.0";
+const LIB_VERSION = "1.1.0"; // plain SemVer, no suffix (SPEC §7.3.3)
 const LIB_PLATFORM = "node"; // <sdk-platform> (SPEC §7.3.1)
-const PROD_ENDPOINT = "https://api.avo.app/inspector/v1/track";
+const PROD_ENDPOINT = "https://api.avo.app/inspector/v2/track";
 const VALID_ENVS = new Set(["dev", "staging", "prod"]);
+// §4.1 / §7.2: CR, LF and NUL delimit or terminate header fields, so a value
+// carrying one can inject headers or split the request. Checked by the SDK
+// itself rather than delegated to the HTTP client, whose behavior varies by
+// runtime — Node happens to reject these, other runtimes do not.
+const HEADER_CONTROL_CHARS = /[\r\n\u0000]/;
 const GZIP_THRESHOLD_BYTES = 1024; // SPEC §7.3.5
 const REQUEST_TIMEOUT_MS = 10_000; // SPEC §7.6
 const DEFAULT_FLUSH_TIMEOUT_MS = 10_000; // SPEC §4.6
 
 // Process-wide logging flag (SPEC §4.4).
 let _shouldLog = false;
+
+/**
+ * SPEC §7.3.6 normalization for one TrackOptions value: strings are trimmed;
+ * absent / null / empty / whitespace-only / non-string => undefined (absent).
+ * @param {*} value - Raw option value from the caller.
+ * @returns {string|undefined} The trimmed non-empty string, or undefined when absent.
+ */
+function normalizeHint(value) {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed === "" ? undefined : trimmed;
+}
 
 // ---------------------------------------------------------------------------
 // §9 Schema extraction (AvoSchemaParser). The parser itself has no try/catch;
@@ -190,6 +209,14 @@ export class AvoInspector {
     if (typeof apiKey !== "string" || apiKey.trim() === "") {
       throw new Error("[Avo Inspector] No API key provided. Inspector can't operate without API key.");
     }
+    // §4.1: the apiKey travels in a request header, so a CR / LF / NUL in it can
+    // inject headers or split the request. Rejected here so the mistake fails
+    // loudly at startup; §7.2 independently refuses the send (see sendBatch).
+    if (HEADER_CONTROL_CHARS.test(apiKey)) {
+      throw new Error(
+        "[Avo Inspector] API key contains a control character. The API key is sent as a request header and cannot contain CR, LF, or NUL.",
+      );
+    }
     if (typeof version !== "string" || version.trim() === "") {
       throw new Error(
         "[Avo Inspector] No version provided. Many features of Inspector rely on versioning. Please provide comparable string version, i.e. integer or semantic.",
@@ -302,10 +329,12 @@ export class AvoInspector {
    * @param {string} eventName - The tracked event name.
    * @param {*} eventProperties - The event properties to extract a schema from.
    * @param {string} [streamId] - Optional stream identifier (§4.2/§8.2).
+   * @param {{ outputReference?: string, originHint?: string, originAppVersion?: string }} [options] -
+   *   Optional gateway coordinates and per-event appVersion override (§4.2.1, §7.3.6).
    * @returns {Promise<Array>} Resolves with the extracted schema (or [] on a non-200 immediate send).
    */
   // §4.2
-  async trackSchemaFromEvent(eventName, eventProperties, streamId) {
+  async trackSchemaFromEvent(eventName, eventProperties, streamId, options) {
     // §4.5 — after destroy(), resolve([]) without enqueue or HTTP.
     if (this._destroyed) return [];
 
@@ -329,12 +358,27 @@ export class AvoInspector {
         return eventSchema; // dropped silently; not buffered, no network call.
       }
 
+      // §4.2.1 / §7.3.6 gateway options: normalized per call, never affecting the
+      // schema. Hint keys are OMITTED when absent (never null / ""); appVersion
+      // follows the four-cell table (null only when originHint is set without a
+      // usable per-event appVersion). A null appVersion needs no special handling:
+      // /inspector/v2/track accepts it and records the observation as "unversioned".
+      const outputReference = normalizeHint(options?.outputReference);
+      const originHint = normalizeHint(options?.originHint);
+      const perEventAppVersion = normalizeHint(options?.originAppVersion);
+      const resolvedAppVersion =
+        originHint !== undefined
+          ? (perEventAppVersion ?? null) // source-scoped: instance version never applies
+          : (perEventAppVersion ?? this.appVersion); // unscoped: override or fall back
+
       // Build the self-contained wire body (§7.3) with the sampling-rate snapshot
-      // in effect at enqueue time (§7.7).
+      // in effect at enqueue time (§7.7). sessionId is NOT part of the body as of
+      // spec 3.0.0 (§3.3) — the endpoint supplies it. See the dated ingestion note
+      // in §7.1 before dropping it from a sender already running in production.
       const body = {
         apiKey: this.apiKey,
         appName: this.appName,
-        appVersion: this.appVersion,
+        appVersion: resolvedAppVersion,
         libVersion: LIB_VERSION,
         env: this.env,
         libPlatform: LIB_PLATFORM,
@@ -346,6 +390,8 @@ export class AvoInspector {
         eventName,
         eventProperties: eventSchema,
       };
+      if (outputReference !== undefined) body.outputReference = outputReference;
+      if (originHint !== undefined) body.originHint = originHint;
 
       const triggered = this._enqueue(body);
       // §4.2.4 / §7.5: when batchSize == 1 the send is synchronous to the call,
@@ -426,9 +472,17 @@ export class AvoInspector {
     const json = JSON.stringify(batch);
     const rawBytes = Buffer.from(json, "utf8");
 
+    // §7.2 required headers. api-key and env are what /inspector/v2/track
+    // authenticates and routes on (the body copies are ignored); X-Avo-Client
+    // identifies the sender and is always this SDK's libPlatform, never per-call
+    // input. They are sent on every request, including when the endpoint is
+    // overridden by AVO_INSPECTOR_MOCK_ENDPOINT and including compressed bodies.
     const headers = {
       "Content-Type": "application/json",
       Accept: "application/json",
+      "api-key": this.apiKey,
+      env: this.env,
+      "X-Avo-Client": LIB_PLATFORM,
     };
 
     // §7.3.5 gzip when serialized body >= 1024 bytes (UTF-8 byte length).
@@ -442,6 +496,32 @@ export class AvoInspector {
       }
     }
     headers["Content-Length"] = String(payload.length);
+
+    // §7.2: refuse to transmit any header value containing CR, LF or NUL. Placed
+    // after the FINAL header set is assembled, so Content-Encoding and
+    // Content-Length are covered too — the rule is about every header value, not
+    // only the caller-supplied one. The constructor already rejects such an
+    // apiKey; this is the deliberate second guard the spec requires, protecting
+    // the wire even if a value reaches the header map another way. On a violation
+    // the batch is dropped and logged (§7.5) — never stripped, escaped or
+    // substituted, since silently rewriting an API key would send a different key
+    // than the caller configured.
+    const unsafeHeader = Object.entries(headers).find(
+      ([, value]) => typeof value === "string" && HEADER_CONTROL_CHARS.test(value),
+    );
+    if (unsafeHeader) {
+      // §7.5.1: log the header NAME only. The offending value is or derives from
+      // the apiKey, which must never reach a log line.
+      if (_shouldLog) {
+        console.error(
+          `[Avo Inspector] Refusing to send: header "${unsafeHeader[0]}" contains CR, LF, or NUL. Batch dropped.`,
+        );
+      }
+      // A refused send is a local failure, not an HTTP outcome: the batch is
+      // dropped and never re-queued, and trackSchemaFromEvent still resolves with
+      // the extracted schema (§7.5). "non200" would wrongly resolve it with [].
+      return { status: "error" };
+    }
 
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);

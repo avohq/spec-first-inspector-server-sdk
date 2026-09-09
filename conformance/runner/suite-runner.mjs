@@ -9,9 +9,11 @@
 //   2. starts/reuses an in-process mock server and exports AVO_INSPECTOR_MOCK_ENDPOINT,
 //   3. configures the mock from mock_response / mock_responses,
 //   4. spawns the harness, writes one input JSON line to stdin, reads one output line,
-//   5. asserts outcome / value (with placeholder-regex format validation),
-//      request count, request bodies (unordered multiset), union count, unique
-//      messageIds, headers, and mock_response:null => zero requests.
+//   5. asserts outcome / value (with placeholder-regex format validation and the
+//      "<absent>" key-must-not-exist placeholder), request count, request bodies
+//      (unordered multiset), union count, unique messageIds, the SPEC §7.2 required
+//      request headers (on every captured request), fixture-declared headers, and
+//      mock_response:null => zero requests.
 //
 // Prints a per-fixture PASS/FAIL line and a summary; exits non-zero if any fail.
 //
@@ -42,6 +44,10 @@ const PLACEHOLDERS = {
   "<semver>": (v) => typeof v === "string" && /^\d+\.\d+\.\d+$/.test(v),
   "<sdk-platform>": (v) => typeof v === "string" && v.length > 0,
 };
+// Presence placeholder (runner-contract "Format validation"): the expected key
+// MUST NOT exist on the captured event. Handled in matchBody, not via PLACEHOLDERS,
+// because its rule is about the key, not the value.
+const ABSENT_PLACEHOLDER = "<absent>";
 
 // ---------------------------------------------------------------------------
 // CLI args
@@ -72,13 +78,27 @@ function parseArgs(argv) {
 // ---------------------------------------------------------------------------
 // Harness invocation: write one JSON line to stdin, read one JSON line of stdout.
 // ---------------------------------------------------------------------------
+
+// Wall-clock budget for one harness process. Well above the SDK's own 10s request
+// timeout and 10s flush timeout (SPEC §7.6, §4.6) plus the concurrency fan-out in
+// batch-6, so a conformant harness never approaches it. It exists so that a
+// harness — or an SDK — that hangs fails ONE fixture instead of hanging the suite:
+// the mock records a request only on the request stream's `end` event, so an SDK
+// that sends a Content-Length larger than its body leaves the server waiting for
+// bytes that never arrive. Override with AVO_CONFORMANCE_HARNESS_TIMEOUT_MS.
+const HARNESS_TIMEOUT_MS = Number(process.env.AVO_CONFORMANCE_HARNESS_TIMEOUT_MS) || 60_000;
+// Grace period between SIGTERM and SIGKILL for a harness that ignores SIGTERM.
+const HARNESS_SIGKILL_GRACE_MS = 2_000;
+
 /**
  * Spawn the harness subprocess for one fixture, write the input envelope as a
  * single JSON line to stdin, and collect its stdout/stderr (runner-contract).
+ * Terminates the child and resolves with `timedOut: true` if it has not exited
+ * within HARNESS_TIMEOUT_MS, so one hung fixture cannot stall the whole run.
  * @param {string} harnessCmd - The harness command to run (whitespace-tokenized).
  * @param {Object} envelope - The fixture input envelope written to the harness stdin.
  * @param {Object} extraEnv - Extra environment variables (e.g. AVO_INSPECTOR_MOCK_ENDPOINT).
- * @returns {Promise<{ exitCode: number, stdout: string, stderr: string, spawnError?: string }>}
+ * @returns {Promise<{ exitCode: number, stdout: string, stderr: string, spawnError?: string, timedOut?: boolean }>}
  *   Resolves (never rejects) with the captured process result.
  */
 function runHarness(harnessCmd, envelope, extraEnv) {
@@ -95,14 +115,56 @@ function runHarness(harnessCmd, envelope, extraEnv) {
 
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let killTimer = null;
+    let timedOut = false;
+
+    /** Resolve exactly once and clear both timers. */
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeoutTimer);
+      if (killTimer) clearTimeout(killTimer);
+      resolve(result);
+    };
+
+    const timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGTERM");
+      // Escalate if the child ignores SIGTERM, then report regardless.
+      killTimer = setTimeout(() => {
+        child.kill("SIGKILL");
+        settle({
+          exitCode: -1,
+          stdout,
+          stderr,
+          timedOut: true,
+          spawnError: `harness did not exit within ${HARNESS_TIMEOUT_MS}ms (SIGKILL sent)`,
+        });
+      }, HARNESS_SIGKILL_GRACE_MS);
+    }, HARNESS_TIMEOUT_MS);
+    // Never let the timers hold the event loop open on their own.
+    timeoutTimer.unref?.();
+
     child.stdout.on("data", (d) => (stdout += d.toString()));
     child.stderr.on("data", (d) => (stderr += d.toString()));
 
     child.on("error", (err) => {
-      resolve({ exitCode: -1, stdout, stderr, spawnError: err.message });
+      settle({ exitCode: -1, stdout, stderr, spawnError: err.message });
     });
-    child.on("close", (code) => {
-      resolve({ exitCode: code, stdout, stderr });
+    child.on("close", (code, signal) => {
+      if (timedOut) {
+        // Closed because we killed it after the timeout, not for any other reason.
+        settle({
+          exitCode: -1,
+          stdout,
+          stderr,
+          timedOut: true,
+          spawnError: `harness did not exit within ${HARNESS_TIMEOUT_MS}ms (killed with ${signal ?? "SIGTERM"})`,
+        });
+        return;
+      }
+      settle({ exitCode: code, stdout, stderr });
     });
 
     child.stdin.write(JSON.stringify(envelope) + "\n");
@@ -142,6 +204,110 @@ function deepEqual(a, b) {
 // "expects" them.
 const FORBIDDEN_WIRE_FIELDS = new Set(["trackingId", "visitorId", "userId"]);
 
+// Exact wire values of the `env` header / body field (SPEC §6.1).
+const VALID_ENVS = new Set(["dev", "staging", "prod"]);
+
+// The one `Content-Type` a server SDK may send (SPEC §7.2). `text/plain` is the
+// browser-SDK preflight workaround and is additionally unsafe on
+// /inspector/v2/track, so it is a hard failure here rather than a warning.
+const REQUIRED_CONTENT_TYPE = "application/json";
+
+/**
+ * Assert the headers SPEC §7.2 makes REQUIRED on every request to
+ * /inspector/v2/track. Enforced by the runner on EVERY captured request — like
+ * FORBIDDEN_WIRE_FIELDS — so an SDK that omits or mislabels them fails conformance
+ * even for a fixture that declares no `expected_request_headers`.
+ *
+ * All five §7.2 REQUIRED headers are checked here: `api-key`, `env`, `X-Avo-Client`,
+ * `Content-Type` and `Content-Length`. `Content-Length` is asserted for PRESENCE and
+ * integer shape only — not by value. HTTP framing already enforces the value, because
+ * the server reads exactly `Content-Length` bytes: a length larger than the body (the
+ * real bug — sending the uncompressed JSON length alongside a gzipped body) stalls the
+ * request until the harness budget expires, and a smaller one truncates the body and
+ * fails JSON parsing. Neither can reach this function as a length disagreeing with what
+ * was received. See the inline note at the assertion itself.
+ *
+ * Three of them must also agree with the body they accompany, because all three
+ * come from the same constructor options that produce the body fields (§7.3.1):
+ * `x-avo-client` = every event's `libPlatform`, `api-key` = every event's `apiKey`,
+ * `env` = every event's `env`. Without these an SDK could send a well-formed header
+ * set that describes a different instance than the body does.
+ * @param {Array<{ headers?: Object, body?: * }>} requests - Captured requests from the mock.
+ * @returns {{ ok: boolean, reason?: string }} ok:true when every request is well-formed.
+ */
+function assertRequiredHeaders(requests) {
+  for (const req of requests) {
+    const headers = req.headers || {};
+    const apiKey = headers["api-key"];
+    if (typeof apiKey !== "string" || apiKey.length === 0) {
+      return { ok: false, reason: `required header api-key missing or empty (SPEC §7.2)` };
+    }
+    const env = headers["env"];
+    if (!VALID_ENVS.has(env)) {
+      return { ok: false, reason: `required header env must be dev|staging|prod, got "${env ?? "absent"}" (SPEC §7.2)` };
+    }
+    const client = headers["x-avo-client"];
+    if (typeof client !== "string" || client.length === 0) {
+      return { ok: false, reason: `required header x-avo-client missing or empty (SPEC §7.2)` };
+    }
+    // `Content-Type` may carry parameters (e.g. "application/json; charset=utf-8");
+    // the media type is what SPEC §7.2 pins.
+    const contentType = headers["content-type"];
+    const mediaType = typeof contentType === "string" ? contentType.split(";")[0].trim().toLowerCase() : undefined;
+    if (mediaType !== REQUIRED_CONTENT_TYPE) {
+      return {
+        ok: false,
+        reason: `required header content-type must be ${REQUIRED_CONTENT_TYPE}, got "${contentType ?? "absent"}" (SPEC §7.2)`,
+      };
+    }
+    // §7.2 requires Content-Length on every request. Only presence and shape are
+    // asserted: HTTP framing already enforces the *value*, because the server reads
+    // exactly Content-Length bytes. A length larger than the body (the real bug —
+    // sending the uncompressed JSON length alongside a gzipped body) stalls the
+    // request until it times out, so the fixture fails on a missing request; a
+    // smaller one truncates the body and fails JSON parsing. Neither can reach the
+    // runner as a length that disagrees with what was received.
+    const contentLength = headers["content-length"];
+    if (typeof contentLength !== "string" || !/^\d+$/.test(contentLength)) {
+      return {
+        ok: false,
+        reason: `required header content-length missing or not an integer, got "${contentLength ?? "absent"}" (SPEC §7.2)`,
+      };
+    }
+    if (Array.isArray(req.body)) {
+      for (const event of req.body) {
+        // §7.3.1 makes apiKey / env / libPlatform REQUIRED string fields on every
+        // event. The comparisons below are unconditional rather than typeof-guarded
+        // so that a MISSING or non-string field fails too: a fixture that asserts
+        // only counts (batch-6) would otherwise certify a request whose events
+        // violate the wire-body contract.
+        if (!event || typeof event !== "object" || Array.isArray(event)) {
+          return { ok: false, reason: `request body contains a non-object event (SPEC §7.3)` };
+        }
+        if (event.libPlatform !== client) {
+          return {
+            ok: false,
+            reason: `header x-avo-client "${client}" != libPlatform ${JSON.stringify(event.libPlatform)} (SPEC §7.2, §7.3.1)`,
+          };
+        }
+        if (event.apiKey !== apiKey) {
+          return {
+            ok: false,
+            reason: `header api-key "${apiKey}" != body apiKey ${JSON.stringify(event.apiKey)} (SPEC §7.2, §7.3.1)`,
+          };
+        }
+        if (event.env !== env) {
+          return {
+            ok: false,
+            reason: `header env "${env}" != body env ${JSON.stringify(event.env)} (SPEC §7.2, §7.3.1)`,
+          };
+        }
+      }
+    }
+  }
+  return { ok: true };
+}
+
 /**
  * Match one captured event body against an expected body, applying placeholder
  * format-validation for placeholder-valued expected fields and rejecting any
@@ -166,9 +332,16 @@ function matchBody(expected, actual) {
   // Every expected key must be present and match. Extra actual keys are tolerated
   // (the Inspector backend ignores unknown fields; schemas/event-body.json permits
   // them). messageId/createdAt/libVersion/libPlatform use placeholder validators.
+  // The "<absent>" placeholder is the one way to assert a key is NOT present —
+  // used for the omitted gateway fields (SPEC §7.3.6): present-with-null or
+  // present-with-"" is a failure, not a tolerated extra.
   for (const key of Object.keys(expected)) {
     const exp = expected[key];
     const act = actual[key];
+    if (exp === ABSENT_PLACEHOLDER) {
+      if (Object.prototype.hasOwnProperty.call(actual, key)) return false;
+      continue;
+    }
     if (typeof exp === "string" && PLACEHOLDERS[exp]) {
       if (!PLACEHOLDERS[exp](act)) return false;
     } else if (!deepEqual(exp, act)) {
@@ -267,8 +440,9 @@ function extractBatches(requests) {
 
 /**
  * Assert expected request headers across every captured request. A null expected
- * value asserts the header is absent; otherwise it must equal exactly (case-insensitive name).
- * @param {Object<string, string|null>} expectedHeaders - Header name -> expected value (or null for absent).
+ * value asserts the header is absent; a placeholder string (e.g. "<sdk-platform>")
+ * validates by format; anything else must equal exactly (case-insensitive name).
+ * @param {Object<string, string|null>} expectedHeaders - Header name -> expected value, placeholder, or null for absent.
  * @param {Array<{ headers?: Object }>} requests - Captured requests from the mock.
  * @returns {{ ok: boolean, reason?: string }} ok:true when all headers match, else a failure reason.
  */
@@ -280,6 +454,12 @@ function assertHeaders(expectedHeaders, requests) {
       const actual = req.headers ? req.headers[key] : undefined;
       if (expected === null) {
         if (actual !== undefined) return { ok: false, reason: `header ${key} expected absent, got "${actual}"` };
+      } else if (typeof expected === "string" && PLACEHOLDERS[expected]) {
+        // Same placeholder vocabulary as expected_request_body: a header whose value
+        // is SDK-specific (X-Avo-Client is the SDK's libPlatform) is format-validated.
+        if (!PLACEHOLDERS[expected](actual)) {
+          return { ok: false, reason: `header ${key} expected to match ${expected}, got "${actual ?? "absent"}"` };
+        }
       } else {
         if (actual !== expected) return { ok: false, reason: `header ${key} expected "${expected}", got "${actual ?? "absent"}"` };
       }
@@ -342,6 +522,10 @@ async function runFixture(suite, fixture, harnessCmd, mock) {
   // 4. Drive the harness.
   const res = await runHarness(harnessCmd, envelope, extraEnv);
 
+  if (res.timedOut) {
+    failures.push(`harness timed out: ${res.spawnError}`);
+    return { fixtureId, failures };
+  }
   if (res.spawnError) {
     failures.push(`harness spawn failed: ${res.spawnError}`);
     return { fixtureId, failures };
@@ -440,6 +624,12 @@ async function runFixture(suite, fixture, harnessCmd, mock) {
   if ("expected_request_bodies" in fixture && batches) {
     const result = matchBatchesUnordered(fixture.expected_request_bodies, batches);
     if (!result.ok) failures.push(`expected_request_bodies: ${result.reason}`);
+  }
+
+  // --- required headers on every captured request (SPEC §7.2) ----------------
+  if (requests.length > 0) {
+    const result = assertRequiredHeaders(requests);
+    if (!result.ok) failures.push(`required request headers: ${result.reason}`);
   }
 
   // --- expected_request_headers ----------------------------------------------

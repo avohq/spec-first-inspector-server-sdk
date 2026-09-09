@@ -13,13 +13,13 @@ conformance/
     fixtures.json                  (13 golden fixtures)
   wire-protocol/
     README.md                      (wire protocol suite docs)
-    fixtures.json                  (8 golden fixtures: wire-1 through wire-8)
+    fixtures.json                  (13 golden fixtures: wire-1 through wire-13)
   error-handling/
     README.md                      (error handling suite docs)
     fixtures.json                  (error handling fixtures)
   batching/
     README.md                      (batching suite docs)
-    fixtures.json                  (6 golden fixtures: batch-1 through batch-6)
+    fixtures.json                  (7 golden fixtures: batch-1 through batch-7)
 ```
 
 ## Suites
@@ -37,13 +37,16 @@ machine-readable fixtures.
 ### wire-protocol
 
 Tests the full `trackSchemaFromEvent` wire behavior: correct HTTP body shape, field values,
-format-validated fields (`messageId`, `createdAt`, `libVersion`, `libPlatform`), sampling drop,
-and non-200 response handling. Requires `AVO_INSPECTOR_MOCK_ENDPOINT` to be set before
-invoking the harness.
+format-validated fields (`messageId`, `createdAt`, `libVersion`, `libPlatform`), the required
+request headers (`api-key`, `env`, `X-Avo-Client`, `Content-Type`, `Content-Length` — SPEC.md §7.2),
+sampling drop, and non-200 response handling. Requires `AVO_INSPECTOR_MOCK_ENDPOINT` to be set
+before invoking the harness.
 
 See `wire-protocol/README.md` for details and `wire-protocol/fixtures.json` for the
-machine-readable fixtures (wire-1 through wire-8). `wire-8` is the batching no-premature-flush
-fixture; see **Batching** below.
+machine-readable fixtures (wire-1 through wire-13). `wire-8` is the batching no-premature-flush
+fixture; see **Batching** below. `wire-9` through `wire-13` cover the OPTIONAL gateway coordinates
+(`options.outputReference` / `originHint`) and the per-event `appVersion` rule (SPEC.md §4.2.1,
+§7.3.6), including the `"<absent>"` placeholder that asserts a key is omitted.
 
 ### error-handling
 
@@ -86,9 +89,10 @@ asserts the resulting HTTP calls — see [`batching/README.md`](./batching/READM
 wire-protocol fixtures (`wire-1`–`wire-7`, `env: "dev"`) additionally cover the immediate-send
 (`batchSize == 1`) path, and `wire-8` covers buffered-not-sent.
 
-**Automated by the `batching` suite** (`batch-1`–`batch-6`): size-trigger flush, `flush()` drain of a
+**Automated by the `batching` suite** (`batch-1`–`batch-7`): size-trigger flush, `flush()` drain of a
 partial batch, `destroy()` discard, `maxQueueSize` FIFO overflow, mixed-stream batches, non-200
-no-requeue, and concurrent enqueue+flush atomic swap-and-clear (`batch-6`, via the `trackN` fan-out).
+no-requeue, concurrent enqueue+flush atomic swap-and-clear (`batch-6`, via the `trackN` fan-out), and
+per-event gateway `options` inside one batch with no deduplication (`batch-7`).
 
 The following **SHOULD-level** behaviors are not automated as deterministic single-process fixtures
 and MUST be verified manually (or via the SDK's own integration tests). Concurrency — a MUST — is now

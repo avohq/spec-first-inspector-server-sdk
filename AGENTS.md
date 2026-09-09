@@ -11,7 +11,9 @@ Section 2 and the checklist in Section 3.
 Generate a `<language>` Inspector SDK — a class named `AvoInspector` (or the
 language-idiomatic equivalent) — that conforms to the normative contract in `SPEC.md`.
 The SDK sends analytics event schemas to the Avo Inspector HTTP API at
-`POST https://api.avo.app/inspector/v1/track`. It is server-side only: no browser,
+`POST https://api.avo.app/inspector/v2/track`, identifying itself with the REQUIRED `api-key`,
+`env` and `X-Avo-Client` request headers (SPEC.md §7.2), alongside the REQUIRED `Content-Type` and
+`Content-Length`. It is server-side only: no browser,
 no localStorage, no session management, no user-facing UI concerns. The SDK MUST
 extract a type schema from arbitrary event property maps and POST that schema to
 the Inspector API, handling sampling, batching, and graceful error
@@ -36,12 +38,14 @@ Read every file in this order before writing any code. Do not skip files.
 6. **`conformance/schema-extraction/fixtures.json`** — 13 golden schema-extraction fixtures.
    Your `extractSchema` implementation MUST produce the exact `expected` output for each `input`.
 7. **`conformance/wire-protocol/fixtures.json`** — Wire-protocol golden fixtures (wire-1 through
-   wire-8). Your `trackSchemaFromEvent` implementation MUST pass all of these.
+   wire-13; wire-9 through wire-13 cover the OPTIONAL gateway `options`, SPEC.md §4.2.1 / §7.3.6).
+   Your `trackSchemaFromEvent` implementation MUST pass all of these.
 8. **`conformance/error-handling/fixtures.json`** — Error-handling fixtures. Your implementation
    MUST pass all of these (REQUIRED suite).
 9. **`conformance/batching/fixtures.json`** — Batching golden fixtures (`batch-1` through
-   `batch-6`), driven via the `operation: "sequence"` multi-event mode (including the `batch-6`
-   `trackN` concurrency fan-out). Your batching implementation MUST pass all of these.
+   `batch-7`), driven via the `operation: "sequence"` multi-event mode (including the `batch-6`
+   `trackN` concurrency fan-out and the `batch-7` per-event `options` batch). Your batching
+   implementation MUST pass all of these.
 
 ---
 
@@ -54,6 +58,16 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 - [ ] Constructor throws synchronously with the exact message
   `"[Avo Inspector] No API key provided. Inspector can't operate without API key."`
   when `apiKey` is absent, empty, or whitespace-only (SPEC.md §4.1).
+- [ ] Constructor throws synchronously with the exact message
+  (copy as a single string — do not split across lines):
+
+  ```text
+  [Avo Inspector] API key contains a control character. The API key is sent as a request header and cannot contain CR, LF, or NUL.
+  ```
+
+  Throw when `apiKey` contains a carriage return (`U+000D`), line feed (`U+000A`), or NUL
+  (`U+0000`) (SPEC.md §4.1). `version` is NOT control-character checked — it travels in the JSON
+  body, where the encoder escapes such characters.
 - [ ] Constructor throws synchronously with the exact message for missing `version`
   (copy as a single string — do not split across lines):
 
@@ -87,9 +101,19 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 
 ### Wire Protocol
 
-- [ ] `trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v1/track` (HTTPS, port 443)
+- [ ] `trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v2/track` (HTTPS, port 443)
   unless `AVO_INSPECTOR_MOCK_ENDPOINT` is set, in which case it MUST POST to that URL
   verbatim (SPEC.md §7.1).
+- [ ] Every request carries the REQUIRED headers `api-key` (the `apiKey` constructor option),
+  `env` (exactly `dev` / `staging` / `prod`), `X-Avo-Client` (the SDK's `libPlatform` value, e.g.
+  `node`, `ruby`, `csharp`, `go` — identical on every request), `Content-Type: application/json`
+  and `Content-Length` (the byte length of the body **actually sent** — the compressed length when
+  the body is gzipped, never the length of the uncompressed JSON; an SDK MUST NOT switch to chunked
+  transfer-encoding to avoid supplying it)
+  — including when the body is gzipped, and including when `AVO_INSPECTOR_MOCK_ENDPOINT` overrides
+  the URL. The endpoint reads the API key and env from these headers, not from the body; a missing
+  or invalid `api-key` / `env` header is answered `400 {"ok":false,"error":"..."}` and no event is
+  ingested. `text/plain` MUST NOT be used as the `Content-Type` (SPEC.md §7.2).
 - [ ] Every outgoing request body is a JSON array of one or more event objects (SPEC.md §7.3). Each
   element MUST be fully self-contained (own `messageId`/`createdAt`/`streamId`/`eventName`/
   `eventProperties`); a batch MAY mix `streamId`/`eventName` across elements (SPEC.md §7.3, §12).
@@ -97,12 +121,40 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   **Required fields (MUST be present in every wire body):**
   `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
   `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
-  `messageId`, `samplingRate`, `sessionId`, `streamId`, `type`.
-  (`sessionId` MUST be the empty string `""` for server SDKs — the ingestion pipeline drops
-  events that omit it.)
+  `messageId`, `samplingRate`, `streamId`, `type`.
+  (`streamId` is the caller-supplied correlation id, or `""` when the caller supplied none.)
 
-  **Forbidden fields (MUST NOT appear in any wire body):**
-  `trackingId`, `visitorId`, `userId`.
+  **Not part of the wire body:**
+  `trackingId`, `visitorId`, `userId` — MUST NOT be sent.
+  `sessionId` — removed in 3.0.0; the endpoint supplies it. SDKs SHOULD NOT send it. Read the
+  dated ingestion note in SPEC.md §7.1 before dropping it from a sender already in production:
+  ingestion still requires it today, and an event without it is answered `200`, discarded before
+  storage, and reported back to the sender in no way that distinguishes it from success.
+
+  **Optional gateway fields (present ONLY when the caller supplied a non-blank value):**
+  `outputReference`, `originHint` — top-level siblings of `eventProperties`, never inside the
+  schema, never sent as `null` or `""` (SPEC.md §7.3.6).
+- [ ] `trackSchemaFromEvent` accepts `outputReference`, `originHint` and `originAppVersion` as
+  OPTIONAL per-call inputs, without breaking existing call sites. The shape follows the target
+  language (SPEC.md §4.2.1) and BOTH are conformant: top-level optional parameters where the
+  language has named / keyword arguments, otherwise one optional options object or an overload.
+  A call that supplies none of the three adds no keys — the body is exactly what this release
+  defines without them. That is **not** the 2.0.0 body: 3.0.0 also moves the endpoint and removes
+  `sessionId`.
+- [ ] Each option value is normalized independently: trimmed; absent / `null` / empty /
+  whitespace-only (and, in dynamically-typed languages, non-string) values are treated as absent.
+  For `outputReference` and `originHint`, absent means the wire key is OMITTED. The **wire**
+  `appVersion` is never omitted — that key is always present and resolves per the four-cell rule
+  below, whether or not the `originAppVersion` option was supplied (SPEC.md §7.3.6).
+- [ ] Wire `appVersion` follows the four-cell rule: `options.originAppVersion` when provided; a literal
+  JSON `null` when `originHint` is set and no usable `options.originAppVersion` was given; otherwise the
+  constructor `version`. The key is always present. A `null` `appVersion` is accepted by the
+  endpoint and recorded as `unversioned`, so the SDK MUST NOT suppress, substitute, or drop the
+  event, and no warning is required (SPEC.md §7.3.6).
+- [ ] `options` never touches `extractSchema`: an event property literally named
+  `outputReference` / `originHint` / `appVersion` stays in `eventProperties` (`wire-13`); options
+  are per event and two calls for the same event with different `outputReference` are both sent
+  (`batch-7`).
 - [ ] `libVersion` MUST be a plain SemVer string (e.g., `"1.2.0"`). No suffix (`+spec`, `-rc1`,
   etc.) is permitted. Define it as a constant in a dedicated version file (SPEC.md §7.3.3).
 - [ ] `messageId` MUST be a UUID v4, lowercase hex, hyphenated, unique per event object.
@@ -131,9 +183,12 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   fails or times out (SPEC.md §7.5, §7.6).
 - [ ] When `samplingRate` is `0.0`, the event MUST be dropped silently and zero HTTP calls MUST
   be made (SPEC.md §7.7).
-- [ ] `samplingRate` MUST be updated from the `samplingRate` field in every successful 200
-  response body. Updates MUST use a lock or atomic primitive in multi-threaded runtimes
-  (SPEC.md §7.4, §7.7).
+- [ ] `samplingRate` MUST be updated from the response body's `samplingRate` field only when a
+  `200` carries one — that is, a numeric value in `[0.0, 1.0]`. A `200` whose body has no
+  `samplingRate` leaves the current value unchanged; this is the ordinary case for the
+  `{"success": false}` event-limit response, so an SDK MUST NOT read a missing field as `0.0`,
+  reset to a default, or fail. Updates MUST use a lock or atomic primitive in multi-threaded
+  runtimes (SPEC.md §7.4, §7.7).
 - [ ] Sampling is evaluated **per event at enqueue** (before buffering); a dropped event is never
   buffered and never sent. Whole-batch sampling MUST NOT be used (SPEC.md §7.7).
 
@@ -220,9 +275,9 @@ variable is set.
 An SDK is conformant when:
 
 - All 13 `schema-extraction` suite fixtures pass.
-- All 8 `wire-protocol` suite fixtures pass.
+- All 13 `wire-protocol` suite fixtures pass.
 - All `error-handling` suite fixtures pass.
-- All 6 `batching` suite fixtures pass.
+- All 7 `batching` suite fixtures pass.
 
 The `batching` suite (`operation: "sequence"`) automates the multi-event MUST behaviors — size-trigger
 flush, `flush()` drain, `destroy()` discard, `maxQueueSize` FIFO overflow, mixed-stream batches,
@@ -235,7 +290,7 @@ via the manual matrix in `conformance/README.md`.
 
 ## 5. Definition of Done
 
-The SDK is complete when all 25 SPEC.md acceptance criteria are satisfied.
+The SDK is complete when all 27 SPEC.md acceptance criteria are satisfied.
 
 ### AC-1 — Constructor apiKey validation (SPEC.md §4.1)
 
@@ -273,19 +328,34 @@ as a static/package-level variable.
 language invariant and is intentionally excluded from the universal fixtures — the JS/TS reference
 parser emits `"int"`; see SPEC.md §9.3.1.)
 
-### AC-8 — Wire endpoint and HTTPS (SPEC.md §7.1)
+### AC-8 — Wire endpoint, HTTPS, and required headers (SPEC.md §7.1, §7.2)
 
-`trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v1/track` over HTTPS.
-When `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST POST to that URL instead.
+`trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v2/track` over HTTPS.
+When `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST POST to that URL instead — the override
+replaces the URL only. Every request (overridden or not, compressed or not) carries `api-key`,
+`env`, `X-Avo-Client`, `Content-Type: application/json` and `Content-Length`; `X-Avo-Client` equals
+the SDK's `libPlatform` and never varies per call, and `Content-Length` is the byte length of the
+body actually sent (compressed length when gzipped). A missing or invalid `api-key` / `env` header is answered
+`400 {"ok":false,"error":"..."}` and is handled as an ordinary non-200 (resolve, no retry).
+
+No header value may contain CR (`U+000D`), LF (`U+000A`), or NUL (`U+0000`) — those characters
+delimit header fields, so a value carrying one can inject headers or split the request. The SDK
+MUST check this itself rather than rely on the HTTP client, whose behavior varies by runtime, and
+MUST fail the send (drop the batch, log per §7.5) rather than strip, escape, or substitute the
+characters. `apiKey` is the only caller-supplied value that reaches a header, so it is the one to
+check; §4.1 rejects such a key at construction as well.
 
 ### AC-9 — Complete wire body fields (SPEC.md §7.3)
 
 Every outgoing event object contains all required fields:
 `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
 `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
-`messageId`, `samplingRate`, `sessionId`, `streamId`, `type`.
-`sessionId` MUST be the empty string `""` for server SDKs (required by the Inspector ingestion
-pipeline, which drops events that omit it). `trackingId`, `visitorId`, and `userId` MUST NOT be sent.
+`messageId`, `samplingRate`, `streamId`, `type`.
+`trackingId`, `visitorId`, and `userId` MUST NOT be sent. `sessionId` is not part of the body as of
+3.0.0 — the endpoint supplies it — and SDKs SHOULD NOT send it; it is tolerated as an unknown extra
+field during the ingestion transition described in SPEC.md §7.1, so a sender already in production
+may keep sending `""` until that change ships.
+`appVersion` is a string except under the `originHint` rule of AC-27, where it is a literal `null`.
 
 ### AC-10 — libVersion plain SemVer, no suffix (SPEC.md §7.3.3)
 
@@ -321,8 +391,10 @@ When `samplingRate` is `1.0`, all events are sent.
 
 ### AC-17 — samplingRate updated from 200 response (SPEC.md §7.4, §7.7)
 
-`samplingRate` is updated from the `samplingRate` field of every successful 200 response.
-Guarded by a lock or atomic primitive in multi-threaded runtimes.
+`samplingRate` is updated from the response body's `samplingRate` field only when a `200` carries
+one, as a numeric value in `[0.0, 1.0]`. A `200` with no such field leaves the current rate
+unchanged rather than resetting or zeroing it. Guarded by a lock or atomic primitive in
+multi-threaded runtimes.
 
 ### AC-18 — flush() implemented for all SDKs (SPEC.md §3.4, §4.6, §11.1)
 
@@ -375,3 +447,28 @@ retry (at-most-once; the backend does not dedup on `messageId`).
 A flushed batch is a JSON array of self-contained event objects that MAY mix `streamId`/
 `eventName` across elements. `Content-Type` stays `application/json`; gzip applies to the assembled
 batch body per the 1024-byte rule.
+
+### AC-26 — Gateway options on the wire (SPEC.md §4.2.1, §7.3.6)
+
+`trackSchemaFromEvent` accepts `outputReference`, `originHint` and `originAppVersion` as OPTIONAL
+per-call inputs. **The call-site shape follows the target language (SPEC.md §4.2.1), and both shapes
+are conformant:** a language with named / keyword arguments takes the three as top-level optional
+parameters; a language without them groups them in one optional options object, or an overload where
+appending a parameter would change an existing method's compiled signature. The wire body is
+identical either way, so do not judge a generated SDK non-conformant for using the shape its own
+language calls for.
+
+`outputReference` / `originHint` are sent as top-level siblings of `eventProperties` — trimmed, and
+OMITTED entirely (never `null` / `""`) when absent, empty, or whitespace-only. They never enter the
+schema, and the three are resolved per call (`wire-9` – `wire-13`, `batch-7`). A call that supplies
+none of them adds no keys — the body is exactly what this release
+defines without them, which is **not** the 2.0.0 body (3.0.0 also moves the endpoint and removes
+`sessionId`).
+
+### AC-27 — Per-event `appVersion` rule (SPEC.md §7.3.1, §7.3.6)
+
+Wire `appVersion` is `options.originAppVersion` when provided (trimmed); a literal JSON `null` when
+`originHint` is set and no usable `options.originAppVersion` was given; otherwise the constructor
+`version`. The key is always present. A resolved `null` is a valid observation — the endpoint
+records it as `unversioned` — so the SDK sends it unchanged and neither drops the event nor is
+required to warn (`wire-10`, `wire-12`, `wire-13`).

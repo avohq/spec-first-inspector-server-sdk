@@ -1,8 +1,8 @@
 {
-  "$comment": "Machine-readable map of SPEC.md / runner-contract.md behaviors to the conformance fixture(s) that gate them. \"automated\" entries are asserted by `npm run conformance:run` (the suite-runner drives the harness and asserts captured mock traffic). \"manual\" entries are NOT covered by the 30 fixtures and must be verified out-of-band; they include BOTH SHOULD-level behaviors (e.g. time/idle flush) AND MUST-level requirements that need a controllable clock, a connection-drop mock, or a non-fixture input (e.g. the prod fail-closed mock-endpoint gate, constructor validation, process-wide logging state, typed 0.0->float). See conformance/README.md.",
-  "spec_version": "2.0.0",
-  "runner_contract_version": "1.0.0",
-  "total_fixtures": 30,
+  "$comment": "Machine-readable map of SPEC.md / runner-contract.md behaviors to the conformance fixture(s) that gate them. \"automated\" entries are asserted by `npm run conformance:run` (the suite-runner drives the harness and asserts captured mock traffic). \"manual\" entries are NOT covered by the 36 fixtures and must be verified out-of-band; they include BOTH SHOULD-level behaviors (e.g. time/idle flush) AND MUST-level requirements that need a controllable clock, a connection-drop mock, or a non-fixture input (e.g. the prod fail-closed mock-endpoint gate, constructor validation, process-wide logging state, typed 0.0->float). See conformance/README.md.",
+  "spec_version": "3.0.0",
+  "runner_contract_version": "1.1.0",
+  "total_fixtures": 36,
   "automated": [
     {
       "behavior": "Schema extraction: primitive classification (boolean/int/string/float)",
@@ -197,6 +197,18 @@
       ]
     },
     {
+      "behavior": "Required request headers on every captured request: api-key non-empty, env one of dev/staging/prod, X-Avo-Client non-empty, Content-Type media type exactly application/json, Content-Length an integer, and each of api-key / env / X-Avo-Client equal to the apiKey / env / libPlatform of every event in that request",
+      "spec": [
+        "SPEC.md §7.2",
+        "runner-contract.md Required request headers"
+      ],
+      "fixtures": [
+        "wire-1",
+        "batch-1"
+      ],
+      "$note": "The runner asserts these on EVERY captured request in every suite, not only on the two fixtures that declare expected_request_headers. wire-1 pins the exact values api-key=test-key / env=dev and batch-1 pins env=staging, so an SDK that hardcodes either value fails one of them; X-Avo-Client is format-validated with <sdk-platform> because the token differs per SDK. The three header/body equalities catch an SDK whose headers describe a different instance than its body does; Content-Type additionally rejects the text/plain browser-SDK workaround, which SPEC.md §7.2 forbids on v2. Content-Length is asserted for presence and integer shape only - HTTP framing already enforces its value, because the server reads exactly Content-Length bytes."
+    },
+    {
       "behavior": "env-gated mock endpoint honored for dev/staging (fail-closed for prod); AVO_INSPECTOR_MOCK_ENDPOINT used as-is",
       "spec": [
         "SPEC.md §7.1",
@@ -206,7 +218,7 @@
         "wire-1",
         "batch-1"
       ],
-      "$note": "All fixtures construct env dev/staging, so the override is honored. The prod fail-closed branch is a security MUST verified by SDK unit tests, not by a fixture (no prod fixture exists)."
+      "$note": "All fixtures construct env dev/staging, so the override is honored, and the override replaces the URL only — the required headers are still sent and still asserted. The prod fail-closed branch is a security MUST verified by SDK unit tests, not by a fixture (no prod fixture exists)."
     },
     {
       "behavior": "Batching: single event with batchSize > 1 is buffered, not sent before flush (zero HTTP calls)",
@@ -301,9 +313,84 @@
         "wire-8",
         "batch-3"
       ]
+    },
+    {
+      "behavior": "Gateway options: outputReference / originHint sent as top-level siblings of eventProperties; per-event appVersion override wins when provided",
+      "spec": [
+        "SPEC.md §4.2.1",
+        "SPEC.md §7.3.6"
+      ],
+      "fixtures": [
+        "wire-9",
+        "wire-11"
+      ]
+    },
+    {
+      "behavior": "Gateway options normalization is TRIM-ONLY: surrounding whitespace removed, internal whitespace (including LF / CR) preserved byte for byte; empty / whitespace-only => key OMITTED (never null / \"\"), asserted via the \"<absent>\" placeholder",
+      "spec": [
+        "SPEC.md §7.3.6",
+        "runner-contract.md Format validation (<absent>)"
+      ],
+      "fixtures": [
+        "wire-9",
+        "wire-10",
+        "wire-11",
+        "wire-12"
+      ]
+    },
+    {
+      "behavior": "appVersion four-cell rule: originHint set + no per-event version => literal null; originHint absent + no per-event version => constructor version",
+      "spec": [
+        "SPEC.md §7.3.1",
+        "SPEC.md §7.3.6"
+      ],
+      "fixtures": [
+        "wire-10",
+        "wire-12",
+        "wire-13",
+        "batch-7"
+      ]
+    },
+    {
+      "behavior": "No cross-contamination: event properties named outputReference / originHint / appVersion stay in the schema; gateway fields come only from options",
+      "spec": [
+        "SPEC.md §7.3.6"
+      ],
+      "fixtures": [
+        "wire-13"
+      ]
+    },
+    {
+      "behavior": "options are per event: same event tracked with different outputReference values (and none) lands as distinct elements in one batch with its own resolved appVersion (override / null / constructor), no deduplication",
+      "spec": [
+        "SPEC.md §4.2.1",
+        "SPEC.md §12.7"
+      ],
+      "fixtures": [
+        "batch-7"
+      ]
+    },
+    {
+      "behavior": "Backward compatibility: a call without options (every fixture that omits it) carries no gateway keys and the constructor appVersion",
+      "spec": [
+        "SPEC.md §4.2.1"
+      ],
+      "fixtures": [
+        "wire-1",
+        "wire-12",
+        "batch-7"
+      ]
     }
   ],
   "manual": [
+    {
+      "behavior": "Dynamically-typed SDKs treat non-string option values (number/boolean/object/array) as absent without stringifying",
+      "spec": [
+        "SPEC.md §7.3.6 normalization rule 3"
+      ],
+      "reason": "Not expressible as a universal fixture: statically-typed harnesses cannot receive a non-string in a string-typed option. Verify via the SDK's own unit tests in dynamically-typed languages.",
+      "fixtures": []
+    },
     {
       "behavior": "Time / idle scheduled flush after batchFlushSeconds (SHOULD)",
       "spec": [
@@ -341,12 +428,12 @@
       "fixtures": []
     },
     {
-      "behavior": "Constructor validation throws on empty/whitespace apiKey or version; invalid env falls back to dev (no throw)",
+      "behavior": "Constructor validation throws on empty/whitespace apiKey or version, and on an apiKey containing CR/LF/NUL; invalid env falls back to dev (no throw)",
       "spec": [
         "SPEC.md §4.1",
         "SPEC.md §6.3"
       ],
-      "reason": "No fixture constructs an invalid instance (all 30 use valid constructor blocks). Verify via the SDK's own unit tests; the harness surfaces a constructor throw as passed:false + exit code 1.",
+      "reason": "No fixture constructs an invalid instance (all 36 use valid constructor blocks). Verify via the SDK's own unit tests; the harness surfaces a constructor throw as passed:false + exit code 1, which the runner contract defines as a harness/runtime invocation failure rather than an assertion result - so a fixture expecting a throw is indistinguishable from a broken harness.",
       "fixtures": []
     },
     {
@@ -364,6 +451,15 @@
         "SPEC.md §7.5.1"
       ],
       "reason": "Logging is observed on stderr, not asserted by the fixtures. Verify via the SDK's own unit tests.",
+      "fixtures": []
+    },
+    {
+      "behavior": "No header value carries CR/LF/NUL: an SDK validates the caller-supplied apiKey and fails the send rather than transmitting a value that could inject or split the request",
+      "spec": [
+        "SPEC.md §7.2",
+        "SPEC.md §4.1"
+      ],
+      "reason": "Not falsifiable through the harness. The observable outcome would be zero captured requests (expected_request_count: 0 with mock_response: null), which the fixture format already expresses - but three different SDKs produce it: one that validates and refuses the send (the required behavior), one that never validates and whose HTTP client happens to reject the value (not conformant, and runtime-dependent), and one that threw at construction per §4.1 (also correct, but a different rule). A fixture that passes for three reasons gates none of them. The §4.1 constructor throw is likewise unassertable - see the constructor-validation entry above. Verify both via the SDK's own unit tests: assert the constructor throws on a CR/LF/NUL apiKey, and assert that a send attempt with such a value is refused BY THE SDK. Note carefully what that second assertion must NOT be: counting requests against a real or mock server does not test this rule. Many HTTP clients reject a CR/LF header value themselves before any bytes leave the process, so zero-requests-observed is produced equally by an SDK that validated and refused and by one that never validated at all - the two look identical while passing, and differ only on a runtime whose client does not reject, which is where the injection actually happens. The assertion has to intercept at the SDK-to-HTTP-client boundary rather than at the network: replace or wrap the client so the test can see whether the SDK ever attempted the call. Assert the inverse in the same test as well - a clean apiKey MUST still reach the client - because a guard that refused every send satisfies every other assertion here. THIS repository's reference SDK is gated that way by scripts/check-reference-sdk.mjs (npm run check:reference-sdk), which runs in process and replaces fetch with a probe, so 'the SDK refused' and 'the HTTP client rejected' become distinguishable - the discrimination a fixture cannot make. It also asserts the inverse, that a clean apiKey still reaches the wire, because a guard refusing every send would satisfy every other check. That script gates this repository only; a generated SDK in another language still needs its own equivalent. Verified rather than assumed: on Node both fetch/undici and node:http reject a CR/LF header value before any bytes leave the process (TypeError 'invalid header' and ERR_INVALID_CHAR respectively), and the mock server records zero requests - identical to a correct refusal. That is the whole problem: the SDK swallows the runtime's rejection as an ordinary send failure, so it logs the wrong cause, and on a runtime that does NOT reject the value the injection simply happens.",
       "fixtures": []
     }
   ]

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://raw.githubusercontent.com/avohq/spec-first-inspector-server-sdk/main/schemas/event-body.json",
   "title": "EventBody",
-  "description": "A single event object in the Inspector v1 track request body. type must be 'event'.",
+  "description": "A single event object in the Inspector v2 track request body. type must be 'event'.",
   "type": "object",
   "required": [
     "apiKey",
@@ -13,7 +13,6 @@
     "libPlatform",
     "messageId",
     "streamId",
-    "sessionId",
     "createdAt",
     "samplingRate",
     "type",
@@ -24,16 +23,16 @@
     "apiKey": {
       "type": "string",
       "minLength": 1,
-      "description": "The Inspector API key passed to the constructor."
+      "description": "The Inspector API key passed to the constructor. Also sent in the api-key request header, which is the copy /inspector/v2/track authenticates on (SPEC.md §7.2); the body copy is ignored but MUST still be present."
     },
     "appName": {
       "type": "string",
       "description": "Application name. Empty string if not provided."
     },
     "appVersion": {
-      "type": "string",
+      "type": ["string", "null"],
       "minLength": 1,
-      "description": "Application version (version constructor option)."
+      "description": "Per-event application version. The version constructor option unless overridden by options.originAppVersion; a literal JSON null ONLY when options.originHint is set and no usable options.originAppVersion was provided (SPEC.md §7.3.6). The key is always present. A null value is accepted by /inspector/v2/track and recorded as \"unversioned\"; the SDK MUST NOT suppress, substitute, or drop such an event."
     },
     "libVersion": {
       "type": "string",
@@ -43,12 +42,12 @@
     "env": {
       "type": "string",
       "enum": ["dev", "staging", "prod"],
-      "description": "Environment. Exact wire values."
+      "description": "Environment. Exact wire values. Also sent in the env request header, which is the copy /inspector/v2/track reads (SPEC.md §7.2); the body copy is ignored but MUST still be present."
     },
     "libPlatform": {
       "type": "string",
       "minLength": 1,
-      "description": "SDK platform/language identifier (e.g. node, ruby, python, go)."
+      "description": "SDK platform/language identifier (e.g. node, ruby, python, go). MUST equal the X-Avo-Client request header value (SPEC.md §7.2)."
     },
     "messageId": {
       "type": "string",
@@ -58,11 +57,6 @@
     "streamId": {
       "type": "string",
       "description": "Caller-supplied streamId, or empty string if none provided."
-    },
-    "sessionId": {
-      "type": "string",
-      "const": "",
-      "description": "Always empty string for server SDKs. Required by the Inspector ingestion pipeline."
     },
     "createdAt": {
       "type": "string",
@@ -90,14 +84,34 @@
         "$ref": "event-property-plain.json"
       },
       "description": "Extracted schema — array of plain property objects."
+    },
+    "outputReference": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$",
+      "description": "OPTIONAL gateway coordinate: reference of the gateway output this observation was bound for (e.g. meta-x7k2q). Absent = gateway-level checkpoint. Trimmed; MUST be omitted (never null or \"\") when empty or whitespace-only. SPEC.md §7.3.6. The pattern mirrors the SPEC.md §7.3.6 trim-only rule exactly: leading and trailing whitespace are rejected because normalization removes them, while internal whitespace (line breaks included) is preserved and therefore accepted. Do not simplify it to ^\\S(.*\\S)?$, which rejects a value containing a newline that a conformant SDK would send unchanged."
+    },
+    "originHint": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^(?!\\s)(?![\\s\\S]*\\s$)[\\s\\S]+$",
+      "description": "OPTIONAL gateway coordinate: low-cardinality label of the source the event came from (e.g. android). Never a user identifier. Trimmed; MUST be omitted (never null or \"\") when empty or whitespace-only. SPEC.md §7.3.6. The pattern mirrors the SPEC.md §7.3.6 trim-only rule exactly: leading and trailing whitespace are rejected because normalization removes them, while internal whitespace (line breaks included) is preserved and therefore accepted. Do not simplify it to ^\\S(.*\\S)?$, which rejects a value containing a newline that a conformant SDK would send unchanged."
     }
   },
-  "$comment": "Unknown extra fields are permitted — the Inspector backend ignores fields it does not read (write-api consumes only named keys). sessionId is REQUIRED and MUST be the empty string for server SDKs (the ingestion pipeline drops events that omit it). trackingId, visitorId, and userId are forbidden (SPEC.md §3.3, §7.3.1). This matches openapi.yaml EventBody.",
+  "$comment": "Unknown extra fields are permitted — the Inspector backend ignores fields it does not read (write-api consumes only named keys). sessionId was REQUIRED in 2.0.0 and is removed in 3.0.0 (SPEC.md §3.3, §7.3.1); it is deliberately NOT listed as forbidden, so a sender that still emits sessionId during the ingestion transition in SPEC.md §7.1 validates as an unknown extra field. trackingId, visitorId, and userId are forbidden (SPEC.md §3.3, §7.3.1). outputReference and originHint are OPTIONAL gateway coordinates that are present only when the caller supplied a non-blank value via options (SPEC.md §7.3.6); appVersion is nullable only under the originHint rule in §7.3.6. This matches openapi.yaml EventBody.",
   "not": {
     "anyOf": [
       { "required": ["trackingId"] },
       { "required": ["visitorId"] },
       { "required": ["userId"] }
     ]
+  },
+  "if": {
+    "required": ["appVersion"],
+    "properties": { "appVersion": { "type": "null" } }
+  },
+  "then": {
+    "required": ["originHint"],
+    "$comment": "SPEC.md §7.3.6: appVersion may be null ONLY when originHint is present (source-scoped event with no usable per-event version). Without originHint the constructor version MUST be sent. /inspector/v2/track accepts a null appVersion and records the observation as unversioned."
   }
 }

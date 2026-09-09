@@ -2,7 +2,7 @@
 
 A reusable, language-agnostic **suite-runner** + **mock Inspector server** for the Avo Inspector
 Server SDK conformance suite. SDK authors point this at their own harness binary and get a
-PASS/FAIL report across all 30 fixtures — no need to re-derive the ~300 LOC of runner + mock for
+PASS/FAIL report across all 36 fixtures — no need to re-derive the ~300 LOC of runner + mock for
 every language.
 
 The runner implements the normative protocol in
@@ -46,11 +46,16 @@ The runner:
    `extractSchema` output, request count, request bodies (with `<uuid-v4>` / `<iso8601>` /
    `<semver>` / `<sdk-platform>` placeholder format-validation), `expected_request_bodies` as an
    **unordered multiset**, `expected_event_union_count`, `expected_unique_message_ids`, and
-   `expected_request_headers` (including `content-encoding: null` for "no gzip").
-5. Prints a per-fixture `[PASS]` / `[FAIL]` line and a `N/30 PASS` summary. Exit code `0` only when
+   `expected_request_headers` (literal, placeholder, or `null` for "header absent"), and the
+   `"<absent>"` placeholder (a key that MUST NOT be present — the omitted gateway fields). On
+   **every** captured request it also asserts all five SPEC.md §7.2 required headers: a non-empty
+   `api-key`, an `env` of `dev` / `staging` / `prod`, a non-empty `x-avo-client`, a `content-type`
+   whose media type is exactly `application/json`, and an integer `content-length`. The first three
+   must additionally equal the `apiKey` / `env` / `libPlatform` of every event in that request.
+5. Prints a per-fixture `[PASS]` / `[FAIL]` line and a `N/36 PASS` summary. Exit code `0` only when
    every fixture passes; non-zero otherwise.
 
-A green run requires all 30 fixtures to pass. The default (no `--harness`) runs the bundled
+A green run requires all 36 fixtures to pass. The default (no `--harness`) runs the bundled
 non-normative example harness (see below).
 
 ## Files
@@ -83,7 +88,22 @@ production — generate your SDK from the spec and prove it with this runner.
 ```sh
 npm run conformance:run                       # default example harness
 npm run conformance:run -- --harness "ruby bin/conformance"
+
+npm test                                      # everything below, in order
+npm run validate:fixtures                     # fixtures vs the JSON Schemas
+npm run check:reference-sdk                   # the rules no fixture can gate
 ```
+
+`check:reference-sdk` asserts what this suite structurally cannot. A fixture can only
+observe the requests a mock captured, so "zero requests" passes for an SDK that validated
+and refused, for one that never validated and whose HTTP client happened to reject the
+value, and for one that threw at construction — three different SDKs, one of them
+conformant. That check runs in process and replaces `fetch` with a probe, which
+distinguishes them, and it asserts the inverse too: a clean `apiKey` must still reach the
+wire, since a guard that refused every send would otherwise look correct.
+
+It gates **this repository's** reference SDK only. A generated SDK in another language
+needs its own equivalent; see the manual entries in `coverage-map.json`.
 
 ## Honest limitations
 
