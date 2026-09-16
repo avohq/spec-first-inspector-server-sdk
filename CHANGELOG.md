@@ -22,6 +22,32 @@ spec version declaration patterns.
 
 ---
 
+## [3.0.1] - 2026-09-16 `[SPEC]`
+
+Corrections to what `/inspector/v2/track` answers, checked against the write API source
+(avohq/monorepo `main`, `projects/inspector-write-api/src/AvoInspectorWriteApi.res`,
+`handleV2TrackRequest`). No normative change; downstream SDKs MAY ignore this release.
+
+### Fixed
+
+- **SPEC.md §7.1 ingestion note (and the matching 3.0.0 changelog note):** removed the claim that
+  one ingestion path answers a missing-`sessionId` event with `ok: false` and a decode-failure count
+  at status `200`. Both `/inspector/v1/track` and `/inspector/v2/track` respond before any event is
+  decoded; decoding happens afterwards in a worker, and a decode failure only reaches the server
+  log. The note's conclusion is unchanged and stronger: no signal of any kind reaches the sender.
+- **SPEC.md §7.4, `openapi.yaml`:** documented `200 {"ok":false}`, which the endpoint's generic error
+  handler returns for an unexpected server-side exception. It carries no `samplingRate` and is not
+  a decode failure.
+- **SPEC.md §7.2, §7.4, `openapi.yaml`, AGENTS.md:** a well-formed but unrecognized API key is also
+  answered `400 {"ok":false,"error":"Api key not found"}`. §7.2 had said a conformant SDK never
+  provokes a `400`; that holds only for missing or malformed headers.
+
+Found while aligning the server-side GTM template
+([avohq/gtm-server-avo-inspector-template#20](https://github.com/avohq/gtm-server-avo-inspector-template/pull/20)),
+and flagged on [#3](https://github.com/avohq/spec-first-inspector-server-sdk/pull/3#issuecomment-5684809966).
+
+---
+
 ## [3.0.0] - 2026-09-04 `[WIRE]`
 
 **Every request moves from `POST https://api.avo.app/inspector/v1/track` to
@@ -177,8 +203,8 @@ stop carrying it.
 > Both answer `200` and the sender sees success. **A sender that drops `sessionId` before
 > ingestion accepts its absence loses every event it sends** — the exact failure that made the
 > field required in the first place. The loss is not literally silent: both paths log a decode
-> warning server-side and one returns a body carrying `ok: false` at status `200`. But nothing
-> reaches the sender, none of it is per-sender, and nothing alerts on it. The
+> warning server-side. But both answer before any event is decoded, so nothing reaches the sender,
+> none of it is per-sender, and nothing alerts on it. (Corrected in 3.0.1.) The
 > ingestion change that defaults it is in flight and **MUST** ship first. Confirming that it has is
 > a release gate: it belongs to whoever owns the backend change, and nothing in this repository can
 > verify it. Until it is confirmed, a sender already running in production should keep sending
