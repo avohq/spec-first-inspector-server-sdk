@@ -112,8 +112,9 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   transfer-encoding to avoid supplying it)
   — including when the body is gzipped, and including when `AVO_INSPECTOR_MOCK_ENDPOINT` overrides
   the URL. The endpoint reads the API key and env from these headers, not from the body; a missing
-  or invalid `api-key` / `env` header is answered `400 {"ok":false,"error":"..."}` and no event is
-  ingested. `text/plain` MUST NOT be used as the `Content-Type` (SPEC.md §7.2).
+  or invalid `api-key` / `env` header, or an unrecognized API key, is answered
+  `400 {"ok":false,"error":"..."}` and no event is ingested. `text/plain` MUST NOT be used as the
+  `Content-Type` (SPEC.md §7.2).
 - [ ] Every outgoing request body is a JSON array of one or more event objects (SPEC.md §7.3). Each
   element MUST be fully self-contained (own `messageId`/`createdAt`/`streamId`/`eventName`/
   `eventProperties`); a batch MAY mix `streamId`/`eventName` across elements (SPEC.md §7.3, §12).
@@ -335,8 +336,9 @@ When `AVO_INSPECTOR_MOCK_ENDPOINT` is set, the SDK MUST POST to that URL instead
 replaces the URL only. Every request (overridden or not, compressed or not) carries `api-key`,
 `env`, `X-Avo-Client`, `Content-Type: application/json` and `Content-Length`; `X-Avo-Client` equals
 the SDK's `libPlatform` and never varies per call, and `Content-Length` is the byte length of the
-body actually sent (compressed length when gzipped). A missing or invalid `api-key` / `env` header is answered
-`400 {"ok":false,"error":"..."}` and is handled as an ordinary non-200 (resolve, no retry).
+body actually sent (compressed length when gzipped). A missing or invalid `api-key` / `env` header, or an unrecognized API
+key, is answered `400 {"ok":false,"error":"..."}` and is handled as an ordinary non-200 (resolve, no
+retry).
 
 No header value may contain CR (`U+000D`), LF (`U+000A`), or NUL (`U+0000`) — those characters
 delimit header fields, so a value carrying one can inject headers or split the request. The SDK

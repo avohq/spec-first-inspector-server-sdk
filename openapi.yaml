@@ -13,7 +13,7 @@ info:
     stay in the body for body-shape stability but are ignored by this endpoint.
 
     See SPEC.md (Section 7) for the full normative wire-protocol specification.
-  version: "3.0.0"
+  version: "3.0.1"
   contact:
     name: Avo Support
     email: support@avo.app
@@ -176,10 +176,15 @@ paths:
                   summary: Dropped by the workspace event limit (still HTTP 200)
                   value:
                     success: false
+                unexpectedServerError:
+                  summary: Unexpected server-side exception (still HTTP 200, no samplingRate)
+                  value:
+                    ok: false
         "400":
           description: |
-            Bad request — returned when the `api-key` request header is missing or empty, or the
-            `env` request header is missing or is not one of `dev` / `staging` / `prod`. No event
+            Bad request — returned when the `api-key` request header is missing or empty, the
+            `env` request header is missing or is not one of `dev` / `staging` / `prod`, or the
+            `api-key` is not a key the endpoint recognizes (`"Api key not found"`). No event
             in the request is ingested. The SDK MUST resolve (not reject) the promise on non-200
             responses and MUST NOT retry. In dev/staging with logging enabled, the status code
             SHOULD be logged.

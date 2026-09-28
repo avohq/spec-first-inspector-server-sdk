@@ -1,6 +1,6 @@
 # SPEC.md — Avo Inspector Server SDK Specification
 
-**Version:** 3.0.0
+**Version:** 3.0.1
 **Status:** Normative
 **Repository:** `avohq/spec-first-inspector-server-sdk`
 
@@ -515,11 +515,10 @@ override replaces the request URL only — every header required by Section 7.2 
 > outright, and the public parser used by v2 decodes it as a required field, which throws and
 > discards the event when it is absent. The status stays `200` and the sender sees success, so a
 > sender that drops the field before ingestion accepts its absence loses **every event** it sends.
-> The loss is not literally silent — both paths write a decode warning to the server's own logs,
-> and one of them additionally answers with a body carrying `ok: false` and a decode-failure count
-> at status `200` — but **no signal reaches the sender**: none of it is per-sender, nothing alerts
-> on it, and an SDK that reads the HTTP status sees an ordinary success. That is the precise
-> failure that made the field required in 2.0.0 in the first place.
+> The loss is not literally silent — both paths write a decode warning to the server's own logs —
+> but **no signal reaches the sender**: both endpoints answer before any event is decoded, so the
+> response is the ordinary success body, none of the logging is per-sender, and nothing alerts on
+> it. That is the precise failure that made the field required in 2.0.0 in the first place.
 >
 > The ingestion change that defaults the field is in flight; it **MUST** ship before any
 > sender generated from this release reaches production, and confirming that it has is a release
@@ -547,13 +546,15 @@ headers and never from the JSON body. The body MUST nevertheless keep carrying i
 and `env` fields (Section 7.3.1): v2 ignores those copies, and keeping them keeps one body shape
 and one request schema across ingestion paths.
 
-**Rejection behavior.** A request whose `api-key` header is missing or empty, or whose `env`
-header is missing or is any string other than `dev` / `staging` / `prod`, is rejected with **HTTP
-`400`** and a body of the shape `{"ok":false,"error":"<message>"}`; none of its events are
-ingested. For the SDK a `400` is an ordinary non-200 response: it MUST resolve rather than reject,
-MUST NOT retry, and the batch is dropped after logging (Sections 7.5, 7.5.2, 12.5). Because both
-header values come from constructor options that are validated at construction time (Section 4.1),
-a conformant SDK never provokes this response.
+**Rejection behavior.** A request whose `api-key` header is missing or empty, whose `env` header
+is missing or is any string other than `dev` / `staging` / `prod`, or whose `api-key` is not a key
+the endpoint recognizes, is rejected with **HTTP `400`** and a body of the shape
+`{"ok":false,"error":"<message>"}`; none of its events are ingested. For the SDK a `400` is an
+ordinary non-200 response: it MUST resolve rather than reject, MUST NOT retry, and the batch is
+dropped after logging (Sections 7.5, 7.5.2, 12.5). Because both header values come from constructor
+options that are validated at construction time (Section 4.1), a conformant SDK never provokes this
+response with a missing or malformed header. A well-formed `apiKey` that the endpoint does not
+recognize still produces it, so a conformant SDK can receive it in production.
 
 **`X-Avo-Client`.** The value identifies the *sender*, not the event: it MUST be the same string
 the SDK writes to `libPlatform` on every event object, MUST be constant for the life of the
@@ -879,6 +880,17 @@ and the property-name collision) and `batch-7` (per-event options inside one bat
 { "success": false }
 ```
 
+**200 OK — unexpected server error (informative):**
+
+```json
+{ "ok": false }
+```
+
+The endpoint's generic error handler answers an unexpected server-side exception with this body at
+status `200`. It carries no `samplingRate`, so the rules below leave the current value unchanged,
+and the SDK does not retry it (Section 12.5). It does not report a decode failure: the
+endpoint answers before any event is decoded (Section 7.1).
+
 The SDK MUST update its internal `samplingRate` when the response body contains a numeric
 `samplingRate` value in `[0.0, 1.0]`. The update MUST only occur on status code `200`; a `200`
 body that carries no `samplingRate` field leaves the current value unchanged. `success: false`
@@ -889,7 +901,8 @@ NOT be retried (Section 12.5), and MAY be logged when logging is enabled.
 
 The SDK MUST resolve (not reject) the promise on non-200 responses. In dev/staging with logging
 enabled, the status code SHOULD be logged. A `400` carries `{"ok":false,"error":"<message>"}` and
-means the `api-key` or `env` request header was missing or invalid (Section 7.2).
+means the `api-key` or `env` request header was missing or invalid, or that the API key is not
+recognized (Section 7.2).
 
 ### 7.5 Error Taxonomy
 
@@ -1684,6 +1697,10 @@ Generated SDKs MUST declare the spec version they implement (e.g., in the SDK RE
 manifest metadata, or a `SPEC_VERSION` constant).
 
 ---
+
+*Spec version: 3.0.1 — corrects what `/inspector/v2/track` answers (Sections 7.1, 7.2, 7.4): no
+decode-failure body ever reaches the sender, an unexpected server error is `200 {"ok":false}`, and
+an unrecognized API key is a `400` a conformant SDK can receive. No normative change.*
 
 *Spec version: 3.0.0 — moves every request to `POST https://api.avo.app/inspector/v2/track` and
 makes the `api-key`, `env` and `X-Avo-Client` request headers REQUIRED (Sections 7.1, 7.2); also
