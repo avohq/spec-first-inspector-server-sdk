@@ -428,7 +428,7 @@
       "fixtures": []
     },
     {
-      "behavior": "Constructor validation throws on empty/whitespace apiKey or version, and on an apiKey containing CR/LF/NUL; invalid env falls back to dev (no throw)",
+      "behavior": "Constructor validation throws on empty/whitespace apiKey or version, and on an apiKey whose held value (after the optional construction-time trim of §4.1) contains CR/LF/NUL; invalid env falls back to dev (no throw)",
       "spec": [
         "SPEC.md §4.1",
         "SPEC.md §6.3"
@@ -454,7 +454,7 @@
       "fixtures": []
     },
     {
-      "behavior": "No header value carries CR/LF/NUL: an SDK validates the caller-supplied apiKey and fails the send rather than transmitting a value that could inject or split the request",
+      "behavior": "No header value carries CR/LF/NUL: an SDK validates the key the instance holds (after the optional construction-time trim of §4.1) and fails the send rather than transmitting a value that could inject or split the request",
       "spec": [
         "SPEC.md §7.2",
         "SPEC.md §4.1"
