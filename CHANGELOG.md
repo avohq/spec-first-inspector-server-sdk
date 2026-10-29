@@ -22,6 +22,25 @@ spec version declaration patterns.
 
 ---
 
+## [3.1.0] - 2026-10-29 `[WIRE]`
+
+Recommends trimming the API key at construction. Downstream SDKs SHOULD regenerate; one that
+keeps the key verbatim stays conformant.
+
+### Changed
+
+- **SPEC.md §4.1:** an SDK SHOULD remove leading and trailing whitespace from `apiKey` once, at
+  construction, before validation, and MUST then use the trimmed key for both the `api-key` header
+  and the body's `apiKey`. The control-character check applies to the trimmed key, so a key read
+  from a file or secret store with a trailing newline works instead of throwing, while a CR, LF or
+  NUL inside the key still throws with the same message. This matches the web SDK and the C#
+  SDK.
+- **SPEC.md §7.2:** the `api-key` header is the key verbatim or trimmed at construction. The
+  send-time guard's "MUST NOT strip, escape, truncate, or substitute" now says it applies at send
+  time, and that the construction-time trim is not such a rewrite.
+- **`openapi.yaml`, `AGENTS.md`:** the same wording. `coverage-map.json` `spec_version` bumped.
+  Constructor validation stays a manual check; no fixture changes.
+
 ## [3.0.1] - 2026-09-16 `[SPEC]`
 
 Corrections to what `/inspector/v2/track` answers, checked against the write API source

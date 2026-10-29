@@ -66,7 +66,9 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   ```
 
   Throw when `apiKey` contains a carriage return (`U+000D`), line feed (`U+000A`), or NUL
-  (`U+0000`) (SPEC.md §4.1). `version` is NOT control-character checked — it travels in the JSON
+  (`U+0000`) (SPEC.md §4.1). Trimming the key first is RECOMMENDED, so a key read with a trailing
+  newline works; the check then applies to the trimmed key, which is the key the SDK uses from
+  then on. `version` is NOT control-character checked — it travels in the JSON
   body, where the encoder escapes such characters.
 - [ ] Constructor throws synchronously with the exact message for missing `version`
   (copy as a single string — do not split across lines):
@@ -104,7 +106,8 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
 - [ ] `trackSchemaFromEvent` POSTs to `https://api.avo.app/inspector/v2/track` (HTTPS, port 443)
   unless `AVO_INSPECTOR_MOCK_ENDPOINT` is set, in which case it MUST POST to that URL
   verbatim (SPEC.md §7.1).
-- [ ] Every request carries the REQUIRED headers `api-key` (the `apiKey` constructor option),
+- [ ] Every request carries the REQUIRED headers `api-key` (the `apiKey` constructor option,
+  trimmed once at construction if the SDK trims, SPEC.md §4.1),
   `env` (exactly `dev` / `staging` / `prod`), `X-Avo-Client` (the SDK's `libPlatform` value, e.g.
   `node`, `ruby`, `csharp`, `go` — identical on every request), `Content-Type: application/json`
   and `Content-Length` (the byte length of the body **actually sent** — the compressed length when

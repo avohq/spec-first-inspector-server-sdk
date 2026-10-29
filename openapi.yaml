@@ -13,7 +13,7 @@ info:
     stay in the body for body-shape stability but are ignored by this endpoint.
 
     See SPEC.md (Section 7) for the full normative wire-protocol specification.
-  version: "3.0.1"
+  version: "3.1.0"
   contact:
     name: Avo Support
     email: support@avo.app
@@ -215,7 +215,8 @@ components:
       in: header
       name: api-key
       description: |
-        The Inspector API key, sent verbatim in the `api-key` request header. REQUIRED: a missing
+        The Inspector API key, sent in the `api-key` request header verbatim, or trimmed once at
+        construction (SPEC.md §4.1). REQUIRED: a missing
         or empty header is answered `400 {"ok": false, "error": "..."}` (SPEC.md §7.2).
 
   schemas:
