@@ -123,7 +123,8 @@ Complete every item before declaring the SDK done. Each item is binary: it eithe
   `eventProperties`); a batch MAY mix `streamId`/`eventName` across elements (SPEC.md §7.3, §12).
 
   **Required fields (MUST be present in every wire body):**
-  `apiKey`, `appName`, `appVersion`, `createdAt`, `env`,
+  `apiKey` (the same key as the `api-key` header: trimmed once at construction if the SDK trims,
+  otherwise verbatim, SPEC.md §4.1), `appName`, `appVersion`, `createdAt`, `env`,
   `eventName`, `eventProperties`, `libPlatform`, `libVersion`,
   `messageId`, `samplingRate`, `streamId`, `type`.
   (`streamId` is the caller-supplied correlation id, or `""` when the caller supplied none.)

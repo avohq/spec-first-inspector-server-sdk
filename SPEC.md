@@ -426,7 +426,7 @@ be in-flight.
 
 | Name | Type | Required | Default | Semantics |
 |---|---|---|---|---|
-| `apiKey` | string | YES | — | Inspector API key from the Avo Inspector dashboard. Sent in the `api-key` request header (the copy the endpoint authenticates on) and, unchanged, in the request body as `apiKey`. MUST be non-empty and non-whitespace. |
+| `apiKey` | string | YES | — | Inspector API key from the Avo Inspector dashboard. The same key is sent in the `api-key` request header (the copy the endpoint authenticates on) and in the request body as `apiKey`: trimmed once at construction for an SDK that trims (Section 4.1), otherwise verbatim. MUST be non-empty and non-whitespace. |
 | `env` | `"dev"` or `"staging"` or `"prod"` | YES | Falls back to `"dev"` if invalid/absent | Controls logging defaults. Sent in the `env` request header (the copy the endpoint reads) and, unchanged, in the request body as `env`. Exact string values are part of the wire protocol. |
 | `version` | string | YES | — | Application version. Sent in the request body as `appVersion`. MUST be non-empty and non-whitespace. Comparable string (integer or semantic version). |
 | `appName` | string | NO | `""` | Application name. Sent in the request body as `appName`. |
