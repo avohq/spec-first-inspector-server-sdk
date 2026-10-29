@@ -273,9 +273,10 @@ components:
           type: string
           minLength: 1
           description: |
-            The Inspector API key passed to the constructor. Also sent in the `api-key` request
-            header, which is the copy this endpoint authenticates on (SPEC.md §7.2); the body copy
-            is ignored but MUST still be present.
+            The Inspector API key, the same key the `api-key` request header carries: trimmed once at
+            construction for an SDK that trims, otherwise verbatim (SPEC.md §4.1). The header is the
+            copy this endpoint authenticates on (SPEC.md §7.2); the body copy is ignored but MUST
+            still be present.
         appName:
           type: string
           description: Application name. Empty string if not provided.

@@ -674,7 +674,7 @@ These fields MUST be present on every event object:
 
 | Field | Type | Description |
 |---|---|---|
-| `apiKey` | string | The Inspector API key passed to the constructor. Also sent in the `api-key` request header, which is the copy the endpoint authenticates on (Section 7.2); the body copy MUST still be present. |
+| `apiKey` | string | The Inspector API key, the same key the `api-key` request header carries: trimmed once at construction for an SDK that trims, otherwise verbatim (Section 4.1). The header is the copy the endpoint authenticates on (Section 7.2); the body copy MUST still be present. |
 | `appName` | string | `appName` constructor option (empty string `""` if not provided). |
 | `appVersion` | string \| null | The `version` constructor option, unless overridden per event by `options.originAppVersion`. A literal JSON `null` ONLY when `options.originHint` is set and no usable `options.originAppVersion` was provided (rule in Section 7.3.6). The key is always present. |
 | `libVersion` | string | SDK library version. MUST be a plain SemVer string (e.g., `"1.2.0"`). No suffix. See Section 7.3.3 for canonical version file guidance. |

@@ -38,6 +38,8 @@ keeps the key verbatim stays conformant.
 - **SPEC.md §7.2:** the `api-key` header is the key verbatim or trimmed at construction. The
   send-time guard's "MUST NOT strip, escape, truncate, or substitute" now says it applies at send
   time, and that the construction-time trim is not such a rewrite.
+- **SPEC.md §5, §7.3.1, `schemas/event-body.json`:** the body's `apiKey` is the same key as the
+  `api-key` header, trimmed or verbatim.
 - **`openapi.yaml`, `AGENTS.md`:** the same wording. `coverage-map.json` `spec_version` bumped.
   Constructor validation stays a manual check; no fixture changes.
 
