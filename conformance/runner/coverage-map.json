@@ -1,6 +1,6 @@
 {
   "$comment": "Machine-readable map of SPEC.md / runner-contract.md behaviors to the conformance fixture(s) that gate them. \"automated\" entries are asserted by `npm run conformance:run` (the suite-runner drives the harness and asserts captured mock traffic). \"manual\" entries are NOT covered by the 36 fixtures and must be verified out-of-band; they include BOTH SHOULD-level behaviors (e.g. time/idle flush) AND MUST-level requirements that need a controllable clock, a connection-drop mock, or a non-fixture input (e.g. the prod fail-closed mock-endpoint gate, constructor validation, process-wide logging state, typed 0.0->float). See conformance/README.md.",
-  "spec_version": "3.0.1",
+  "spec_version": "3.1.0",
   "runner_contract_version": "1.1.0",
   "total_fixtures": 36,
   "automated": [
@@ -428,7 +428,7 @@
       "fixtures": []
     },
     {
-      "behavior": "Constructor validation throws on empty/whitespace apiKey or version, and on an apiKey containing CR/LF/NUL; invalid env falls back to dev (no throw)",
+      "behavior": "Constructor validation throws on empty/whitespace apiKey or version, and on an apiKey whose held value (after the optional construction-time trim of §4.1) contains CR/LF/NUL; invalid env falls back to dev (no throw)",
       "spec": [
         "SPEC.md §4.1",
         "SPEC.md §6.3"
@@ -454,7 +454,7 @@
       "fixtures": []
     },
     {
-      "behavior": "No header value carries CR/LF/NUL: an SDK validates the caller-supplied apiKey and fails the send rather than transmitting a value that could inject or split the request",
+      "behavior": "No header value carries CR/LF/NUL: an SDK validates the key the instance holds (after the optional construction-time trim of §4.1) and fails the send rather than transmitting a value that could inject or split the request",
       "spec": [
         "SPEC.md §7.2",
         "SPEC.md §4.1"

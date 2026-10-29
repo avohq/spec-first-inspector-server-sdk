@@ -1,6 +1,6 @@
 # SPEC.md — Avo Inspector Server SDK Specification
 
-**Version:** 3.0.1
+**Version:** 3.1.0
 **Status:** Normative
 **Repository:** `avohq/spec-first-inspector-server-sdk`
 
@@ -136,7 +136,14 @@ new AvoInspector(options: {
 })
 ```
 
-**Validation at construction time.** The constructor MUST throw synchronously if validation fails:
+**Trimming the API key.** An SDK SHOULD remove leading and trailing whitespace from `apiKey`
+once, at construction, before the validation below, and MUST then use the trimmed key everywhere
+the key is used: the `api-key` request header (Section 7.2) and the body's `apiKey` copy
+(Section 7.3.1) carry the same value. An SDK that does not trim uses the key verbatim and is
+also conformant.
+
+**Validation at construction time.** The constructor MUST throw synchronously if validation fails.
+For an SDK that trims, the checks apply to the trimmed key:
 
 | Option | Validation | Error message (exact) |
 |---|---|---|
@@ -156,6 +163,15 @@ configuration mistake into an application that starts cleanly and silently deliv
 it here too fails loudly, once, at the moment the mistake is made, next to the existing `apiKey`
 checks that the caller is already reading. The two checks are deliberately redundant: this one is
 for the developer, the Section 7.2 one is for the wire.
+
+**Why trimming is recommended.** The commonest way a key ends up carrying a control character is a
+trailing newline from the file or secret store it was read from. Without the trim, that key fails
+the control-character check above and the application does not start. An Avo API key never
+contains whitespace, so trimming cannot turn the configured key into a different working key: it
+repairs exactly that accident. A CR, LF or NUL with key characters on both sides survives the trim
+and still throws, and NUL is never whitespace, so the trim never lets an unsafe key through. The
+web SDK and the C# SDK trim; browsers also trim header values themselves, so trimming at the source
+keeps the header and body copies identical there too.
 
 This applies to `apiKey` only. `version` is validated for emptiness above but is not
 control-character checked, because it travels in the JSON body as `appVersion`, where the JSON
@@ -410,7 +426,7 @@ be in-flight.
 
 | Name | Type | Required | Default | Semantics |
 |---|---|---|---|---|
-| `apiKey` | string | YES | — | Inspector API key from the Avo Inspector dashboard. Sent in the `api-key` request header (the copy the endpoint authenticates on) and, unchanged, in the request body as `apiKey`. MUST be non-empty and non-whitespace. |
+| `apiKey` | string | YES | — | Inspector API key from the Avo Inspector dashboard. The same key is sent in the `api-key` request header (the copy the endpoint authenticates on) and in the request body as `apiKey`: trimmed once at construction for an SDK that trims (Section 4.1), otherwise verbatim. MUST be non-empty and non-whitespace. |
 | `env` | `"dev"` or `"staging"` or `"prod"` | YES | Falls back to `"dev"` if invalid/absent | Controls logging defaults. Sent in the `env` request header (the copy the endpoint reads) and, unchanged, in the request body as `env`. Exact string values are part of the wire protocol. |
 | `version` | string | YES | — | Application version. Sent in the request body as `appVersion`. MUST be non-empty and non-whitespace. Comparable string (integer or semantic version). |
 | `appName` | string | NO | `""` | Application name. Sent in the request body as `appName`. |
@@ -532,7 +548,7 @@ override replaces the request URL only — every header required by Section 7.2 
 
 | Header | Value | Presence |
 |---|---|---|
-| `api-key` | The `apiKey` constructor option, verbatim | REQUIRED |
+| `api-key` | The `apiKey` constructor option, verbatim, or trimmed once at construction (Section 4.1) | REQUIRED |
 | `env` | The instance's environment — exactly `dev`, `staging`, or `prod` (Section 6.1) | REQUIRED |
 | `X-Avo-Client` | The SDK's `libPlatform` value (Section 7.3.1) — e.g. `node`, `ruby`, `csharp`, `go` | REQUIRED |
 | `Content-Type` | `application/json` | REQUIRED |
@@ -587,12 +603,17 @@ An SDK MUST perform this check itself and MUST NOT delegate it to the HTTP clien
 some reject these characters, some throw a language-specific exception, and some pass them through
 or re-encode them silently. A conformant SDK behaves the same on all of them.
 
+This check runs on the key the instance holds: after the construction-time trim of Section 4.1,
+for an SDK that trims.
+
 When a header value cannot be transmitted safely, the SDK MUST **fail the send** — the batch is
 dropped and the failure logged per Section 7.5, exactly as any other send failure (Section 12.5),
 and `trackSchemaFromEvent` still resolves rather than rejects (Section 4.2). The SDK MUST NOT strip,
-escape, truncate, or substitute the offending characters: silently rewriting an API key would send
-a *different* key than the caller configured and turn a clear local failure into a confusing
-server-side rejection.
+escape, truncate, or substitute the offending characters at send time: silently rewriting an API
+key would send a *different* key than the caller configured and turn a clear local failure into a
+confusing server-side rejection. The construction-time trim of Section 4.1 is not such a rewrite:
+it happens once, before validation, removes only surrounding whitespace, and the trimmed key is the
+configured key from then on.
 
 > **Why this appears in this release.** Before the move to `/inspector/v2/track` the API key
 > travelled only inside the JSON body, where a control character is escaped by the JSON encoder and
@@ -653,7 +674,7 @@ These fields MUST be present on every event object:
 
 | Field | Type | Description |
 |---|---|---|
-| `apiKey` | string | The Inspector API key passed to the constructor. Also sent in the `api-key` request header, which is the copy the endpoint authenticates on (Section 7.2); the body copy MUST still be present. |
+| `apiKey` | string | The Inspector API key, the same key the `api-key` request header carries: trimmed once at construction for an SDK that trims, otherwise verbatim (Section 4.1). The header is the copy the endpoint authenticates on (Section 7.2); the body copy MUST still be present. |
 | `appName` | string | `appName` constructor option (empty string `""` if not provided). |
 | `appVersion` | string \| null | The `version` constructor option, unless overridden per event by `options.originAppVersion`. A literal JSON `null` ONLY when `options.originHint` is set and no usable `options.originAppVersion` was provided (rule in Section 7.3.6). The key is always present. |
 | `libVersion` | string | SDK library version. MUST be a plain SemVer string (e.g., `"1.2.0"`). No suffix. See Section 7.3.3 for canonical version file guidance. |
@@ -1697,6 +1718,11 @@ Generated SDKs MUST declare the spec version they implement (e.g., in the SDK RE
 manifest metadata, or a `SPEC_VERSION` constant).
 
 ---
+
+*Spec version: 3.1.0 — recommends trimming the `apiKey` once at construction, before validation, so a
+key read with a trailing newline works instead of failing the control-character check (Sections 4.1,
+7.2). A CR, LF or NUL inside the key still throws. An SDK that keeps the key verbatim stays
+conformant.*
 
 *Spec version: 3.0.1 — corrects what `/inspector/v2/track` answers (Sections 7.1, 7.2, 7.4): no
 decode-failure body ever reaches the sender, an unexpected server error is `200 {"ok":false}`, and
